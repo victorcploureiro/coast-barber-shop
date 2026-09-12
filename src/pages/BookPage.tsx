@@ -174,7 +174,7 @@ export default function BookPage() {
 
   if (confirmed) {
     return (
-      <div className="min-h-screen pb-60">
+      <div className="min-h-screen pb-120">
         <Header title="Agendamento" />
         <div className="flex flex-col items-center justify-center px-5 mt-16 animate-scale-in">
           <div className="h-20 w-20 rounded-full gold-gradient flex items-center justify-center mb-5 shadow-lg shadow-gold-500/30">
