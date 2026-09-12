@@ -110,7 +110,7 @@ export default function BookPage({ onNavigate }: BookPageProps) {
         }
       } catch (err) {
         console.error('Erro ao buscar dados:', err);
-      } font-medium {
+      } finally {
         setLoadingServices(false);
       }
     }
