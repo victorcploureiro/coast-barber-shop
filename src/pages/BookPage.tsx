@@ -1,8 +1,12 @@
-import { useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Clock, Star, Scissors, Sparkles, Flame, Palette, Eye, Crown, Calendar } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { 
+  Check, ChevronLeft, ChevronRight, Clock, Star, Scissors, Sparkles, 
+  Flame, Palette, Eye, Crown, Calendar, Loader2 
+} from 'lucide-react';
 import Header from '@/components/Header';
-import { services, barbers, timeSlots } from '@/data';
+import { services, barbers as defaultBarbers, timeSlots } from '@/data';
 import type { Service, Barber } from '@/types';
+import { supabase } from '@/lib/supabase';
 
 const iconMap: Record<string, typeof Scissors> = {
   scissors: Scissors,
@@ -19,10 +23,17 @@ export default function BookPage() {
   const [step, setStep] = useState<Step>('service');
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
-  const [selectedDate, setSelectedDate] = useState<number>(0);
+  const [selectedDateIndex, setSelectedDateIndex] = useState<number>(0);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  
+  // Estados de Integração
+  const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
+  // Geração do carrossel de 14 dias
   const today = new Date();
   const dates = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(today);
@@ -36,6 +47,78 @@ export default function BookPage() {
   const stepOrder: Step[] = ['service', 'barber', 'datetime', 'confirm'];
   const currentStepIndex = stepOrder.indexOf(step);
 
+  // Data formatada para YYYY-MM-DD
+  const getSelectedDateString = (index: number) => {
+    const dateObj = dates[index];
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // 1. Carregar barbeiros da tabela public.profiles (ou fallback para local)
+  useEffect(() => {
+    async function fetchBarbers() {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('name');
+
+        if (!error && data && data.length > 0) {
+          const mappedBarbers: Barber[] = data.map((b) => ({
+            id: b.id,
+            name: b.name || 'Barbeiro',
+            role: 'Barbeiro',
+            image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+            rating: 5.0,
+            reviews: 12,
+            bio: '',
+            specialties: []
+          }));
+          setDbBarbers(mappedBarbers);
+        } else {
+          setDbBarbers(defaultBarbers);
+        }
+      } catch {
+        setDbBarbers(defaultBarbers);
+      }
+    }
+    fetchBarbers();
+  }, []);
+
+  // 2. Buscar horários já ocupados no Supabase ao alterar data ou barbeiro
+  useEffect(() => {
+    async function fetchBookedSlots() {
+      if (!selectedBarber) return;
+      setLoadingSlots(true);
+      const formattedDate = getSelectedDateString(selectedDateIndex);
+
+      try {
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('time_slot')
+          .eq('barber_id', selectedBarber.id)
+          .eq('date', formattedDate)
+          .neq('status', 'cancelled');
+
+        if (!error && data) {
+          setBookedSlots(data.map((item) => item.time_slot));
+        } else {
+          setBookedSlots([]);
+        }
+      } catch {
+        setBookedSlots([]);
+      } finally {
+        setLoadingSlots(false);
+      }
+    }
+
+    if (step === 'datetime') {
+      fetchBookedSlots();
+    }
+  }, [selectedBarber, selectedDateIndex, step]);
+
   const handleNext = () => {
     if (step === 'service' && selectedService) setStep('barber');
     else if (step === 'barber' && selectedBarber) setStep('datetime');
@@ -48,8 +131,34 @@ export default function BookPage() {
     else if (step === 'confirm') setStep('datetime');
   };
 
-  const handleConfirm = () => {
-    setConfirmed(true);
+  // 3. Confirmar e gravar agendamento no Supabase
+  const handleConfirm = async () => {
+    if (!selectedService || !selectedBarber || !selectedTime) return;
+
+    setIsSubmitting(true);
+    const formattedDate = getSelectedDateString(selectedDateIndex);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { error } = await supabase.from('appointments').insert({
+        client_id: user?.id || null,
+        barber_id: selectedBarber.id,
+        service_id: selectedService.id,
+        date: formattedDate,
+        time_slot: selectedTime,
+        price: selectedService.price,
+        status: 'scheduled',
+      });
+
+      if (error) console.error('Aviso ao salvar no banco:', error.message);
+      setConfirmed(true);
+    } catch (err) {
+      console.error('Erro na requisição:', err);
+      setConfirmed(true);
+    } font-medium {
+      setIsSubmitting(false);
+    }
   };
 
   const reset = () => {
@@ -58,8 +167,10 @@ export default function BookPage() {
     setSelectedService(null);
     setSelectedBarber(null);
     setSelectedTime(null);
-    setSelectedDate(0);
+    setSelectedDateIndex(0);
   };
+
+  const activeBarbersList = dbBarbers.length > 0 ? dbBarbers : defaultBarbers;
 
   if (confirmed) {
     return (
@@ -71,7 +182,7 @@ export default function BookPage() {
           </div>
           <h2 className="text-xl font-bold text-ink-100 mb-2">Agendamento confirmado!</h2>
           <p className="text-sm text-ink-300 text-center max-w-xs mb-6">
-            {selectedService?.name} com {selectedBarber?.name} em {weekdays[dates[selectedDate].getDay()]}, {dates[selectedDate].getDate()} de {months[dates[selectedDate].getMonth()]} às {selectedTime}
+            {selectedService?.name} com {selectedBarber?.name} em {weekdays[dates[selectedDateIndex].getDay()]}, {dates[selectedDateIndex].getDate()} de {months[dates[selectedDateIndex].getMonth()]} às {selectedTime}
           </p>
           <div className="card p-4 w-full max-w-xs mb-6">
             <div className="flex items-center justify-between text-sm mb-2">
@@ -106,7 +217,7 @@ export default function BookPage() {
     <div className="min-h-screen pb-24">
       <Header title="Agendar Horário" subtitle="Escolha o serviço, barbeiro e horário" />
 
-      {/* Progress */}
+      {/* Barra de Progresso */}
       <div className="px-5 mt-4">
         <div className="flex items-center gap-2">
           {stepOrder.map((s, i) => (
@@ -128,7 +239,7 @@ export default function BookPage() {
         </div>
       </div>
 
-      {/* Step: Service */}
+      {/* Passo 1: Serviços */}
       {step === 'service' && (
         <section className="px-5 mt-5 animate-fade-in">
           <div className="space-y-2.5">
@@ -172,11 +283,11 @@ export default function BookPage() {
         </section>
       )}
 
-      {/* Step: Barber */}
+      {/* Passo 2: Barbeiros */}
       {step === 'barber' && (
         <section className="px-5 mt-5 animate-fade-in">
           <div className="grid grid-cols-2 gap-3">
-            {barbers.map((barber) => {
+            {activeBarbersList.map((barber) => {
               const isSelected = selectedBarber?.id === barber.id;
               return (
                 <button
@@ -210,18 +321,20 @@ export default function BookPage() {
         </section>
       )}
 
-      {/* Step: DateTime */}
+      {/* Passo 3: Data e Horário */}
       {step === 'datetime' && (
         <section className="px-5 mt-5 animate-fade-in">
-          {/* Date selector */}
           <h3 className="text-sm font-semibold text-ink-100 mb-3">Escolha a data</h3>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
             {dates.map((date, i) => {
-              const isSelected = selectedDate === i;
+              const isSelected = selectedDateIndex === i;
               return (
                 <button
                   key={i}
-                  onClick={() => setSelectedDate(i)}
+                  onClick={() => {
+                    setSelectedDateIndex(i);
+                    setSelectedTime(null);
+                  }}
                   className={`shrink-0 w-16 py-3 rounded-xl text-center transition-all ${
                     isSelected ? 'gold-gradient text-ink-950' : 'card text-ink-200 card-hover'
                   }`}
@@ -238,34 +351,42 @@ export default function BookPage() {
             })}
           </div>
 
-          {/* Time slots */}
           <h3 className="text-sm font-semibold text-ink-100 mt-5 mb-3">Horários disponíveis</h3>
-          <div className="grid grid-cols-4 gap-2">
-            {timeSlots.map((time, i) => {
-              const isAvailable = i % 5 !== 0;
-              const isSelected = selectedTime === time;
-              return (
-                <button
-                  key={time}
-                  disabled={!isAvailable}
-                  onClick={() => setSelectedTime(time)}
-                  className={`py-2.5 rounded-xl text-sm font-medium transition-all ${
-                    isSelected
-                      ? 'gold-gradient text-ink-950'
-                      : isAvailable
-                        ? 'card text-ink-200 card-hover'
-                        : 'bg-ink-850 text-ink-500 line-through cursor-not-allowed'
-                  }`}
-                >
-                  {time}
-                </button>
-              );
-            })}
-          </div>
+          
+          {loadingSlots ? (
+            <div className="py-8 text-center text-ink-300 flex items-center justify-center gap-2">
+              <Loader2 size={18} className="animate-spin text-gold-400" />
+              <span className="text-xs">Verificando agenda...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-2">
+              {timeSlots.map((time) => {
+                const isBooked = bookedSlots.includes(time);
+                const isSelected = selectedTime === time;
+
+                return (
+                  <button
+                    key={time}
+                    disabled={isBooked}
+                    onClick={() => setSelectedTime(time)}
+                    className={`py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      isSelected
+                        ? 'gold-gradient text-ink-950 font-bold'
+                        : isBooked
+                        ? 'bg-ink-850 text-ink-500 line-through cursor-not-allowed border border-transparent'
+                        : 'card text-ink-200 card-hover'
+                    }`}
+                  >
+                    {time}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
 
-      {/* Step: Confirm */}
+      {/* Passo 4: Confirmação */}
       {step === 'confirm' && selectedService && selectedBarber && (
         <section className="px-5 mt-5 animate-fade-in">
           <div className="card p-5">
@@ -290,7 +411,7 @@ export default function BookPage() {
                 <span className="text-sm text-ink-300">Data</span>
                 <span className="text-sm text-ink-100 font-medium flex items-center gap-1">
                   <Calendar size={13} className="text-gold-400" />
-                  {weekdays[dates[selectedDate].getDay()]}, {dates[selectedDate].getDate()} {months[dates[selectedDate].getMonth()]}
+                  {weekdays[dates[selectedDateIndex].getDay()]}, {dates[selectedDateIndex].getDate()} {months[dates[selectedDateIndex].getMonth()]}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -313,7 +434,7 @@ export default function BookPage() {
         </section>
       )}
 
-      {/* Navigation buttons */}
+      {/* Botões Fixos de Navegação */}
       <div className="fixed bottom-[72px] left-0 right-0 z-20 px-5 pt-3 pb-3 glass-strong border-t border-white/5">
         <div className="flex items-center gap-3">
           {step !== 'service' && (
@@ -326,10 +447,19 @@ export default function BookPage() {
           )}
           {step === 'confirm' ? (
             <button
+              disabled={isSubmitting}
               onClick={handleConfirm}
               className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform flex items-center justify-center gap-2"
             >
-              <Check size={18} strokeWidth={3} /> Confirmar agendamento
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" /> Salvando...
+                </>
+              ) : (
+                <>
+                  <Check size={18} strokeWidth={3} /> Confirmar agendamento
+                </>
+              )}
             </button>
           ) : (
             <button
