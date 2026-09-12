@@ -1,6 +1,7 @@
 import { Star, Crown, ChevronRight, Scissors, Calendar, Heart, Settings, Bell, CreditCard, HelpCircle, LogOut, Award } from 'lucide-react';
 import Header from '@/components/Header';
 import { appointments } from '@/data';
+import { BRAND_CONFIG } from '@/config/brand';
 import type { TabKey } from '@/types';
 
 interface ProfilePageProps {
@@ -137,7 +138,7 @@ export default function ProfilePage({ onNavigate }: ProfilePageProps) {
         </button>
       </section>
 
-      <p className="text-center text-[10px] text-ink-500 mt-6">Coast Barber Shop v1.0.0</p>
+      <p className="text-center text-[10px] text-ink-500 mt-6">{BRAND_CONFIG.name} v1.0.0</p>
     </div>
   );
 }

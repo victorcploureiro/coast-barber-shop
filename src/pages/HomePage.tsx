@@ -1,6 +1,7 @@
 import { Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, Flame, Palette, Eye, Crown } from 'lucide-react';
 import Header from '@/components/Header';
 import { services, barbers, heroImage, shopInterior, beardGrooming } from '@/data';
+import { BRAND_CONFIG } from '@/config/brand';
 import type { TabKey } from '@/types';
 
 const iconMap: Record<string, typeof Scissors> = {
@@ -23,13 +24,16 @@ export default function HomePage({ onNavigate }: HomePageProps) {
 
       {/* Hero */}
       <section className="relative mx-5 mt-2 rounded-2xl overflow-hidden h-56 animate-slide-up">
-        <img src={heroImage} alt="Barbearia" className="absolute inset-0 w-full h-full object-cover" />
+        <img src={heroImage} alt={BRAND_CONFIG.name} className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/60 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-ink-950/80 to-transparent" />
         <div className="absolute bottom-0 left-0 p-5">
-          <p className="text-gold-400 text-xs font-semibold tracking-widest uppercase mb-1">Estilo & Tradição</p>
-          <h2 className="font-display text-3xl tracking-wide text-white leading-none">
-            A NAVALETA QUE<br />DEFINE SEU ESTILO
+          {/* Tagline vinda do BRAND_CONFIG */}
+          <p className="text-gold-400 text-xs font-semibold tracking-widest uppercase mb-1">
+            {BRAND_CONFIG.tagline}
+          </p>
+          <h2 className="font-display text-3xl tracking-wide text-white leading-none uppercase">
+            A NAVALHA QUE<br />DEFINE SEU ESTILO
           </h2>
           <button
             onClick={() => onNavigate('book')}
