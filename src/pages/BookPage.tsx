@@ -156,7 +156,7 @@ export default function BookPage() {
     } catch (err) {
       console.error('Erro na requisição:', err);
       setConfirmed(true);
-    } font-medium {
+    } finally {
       setIsSubmitting(false);
     }
   };
