@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Check, ChevronLeft, ChevronRight, Clock, Star, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, Loader2 
+  Flame, Palette, Eye, Crown, Calendar, Loader2, AlertCircle
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { services, barbers as defaultBarbers, timeSlots } from '@/data';
@@ -32,6 +32,7 @@ export default function BookPage() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   // Geração do carrossel de 14 dias
   const today = new Date();
@@ -54,37 +55,37 @@ export default function BookPage() {
   };
 
   const getAvailableSlots = (dateObj: Date, allSlots: string[]) => {
-  const day = dateObj.getDay();
-  if (isClosedDay(dateObj)) return [];
+    const day = dateObj.getDay();
+    if (isClosedDay(dateObj)) return [];
 
-  const now = new Date();
-  const isToday = 
-    dateObj.getDate() === now.getDate() &&
-    dateObj.getMonth() === now.getMonth() &&
-    dateObj.getFullYear() === now.getFullYear();
+    const now = new Date();
+    const isToday = 
+      dateObj.getDate() === now.getDate() &&
+      dateObj.getMonth() === now.getMonth() &&
+      dateObj.getFullYear() === now.getFullYear();
 
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  return allSlots.filter((slot) => {
-    const [hours, minutes] = slot.split(':').map(Number);
-    const slotTotalMinutes = hours * 60 + minutes;
+    return allSlots.filter((slot) => {
+      const [hours, minutes] = slot.split(':').map(Number);
+      const slotTotalMinutes = hours * 60 + minutes;
 
-    // 1. Se for HOJE, ignora horários que já passaram
-    if (isToday && slotTotalMinutes <= currentMinutes) {
-      return false;
-    }
+      // 1. Se for HOJE, ignora horários que já passaram
+      if (isToday && slotTotalMinutes <= currentMinutes) {
+        return false;
+      }
 
-    // 2. Limites normais da barbearia
-    if (day === 6) {
-      // Sábado até 18:30 (1110 minutos)
-      return slotTotalMinutes <= 1110;
-    }
-    // Terça a Sexta até 19:00 (1140 minutos)
-    return slotTotalMinutes <= 1140;
-  });
-};
+      // 2. Limites normais da barbearia
+      if (day === 6) {
+        // Sábado até 18:30 (1110 minutos)
+        return slotTotalMinutes <= 1110;
+      }
+      // Terça a Sexta até 19:00 (1140 minutos)
+      return slotTotalMinutes <= 1140;
+    });
+  };
 
-  // Data formatada para YYYY-MM-DD
+  // Data formatada para YYYY-MM-DD garantindo fuso horário local
   const getSelectedDateString = (index: number) => {
     const dateObj = dates[index];
     const year = dateObj.getFullYear();
@@ -159,23 +160,45 @@ export default function BookPage() {
   const handleNext = () => {
     if (step === 'service' && selectedService) setStep('barber');
     else if (step === 'barber' && selectedBarber) setStep('datetime');
-    else if (step === 'datetime' && selectedTime) setStep('confirm');
+    else if (step === 'datetime' && selectedTime) {
+      setBookingError(null);
+      setStep('confirm');
+    }
   };
 
   const handleBack = () => {
+    setBookingError(null);
     if (step === 'barber') setStep('service');
     else if (step === 'datetime') setStep('barber');
     else if (step === 'confirm') setStep('datetime');
   };
 
-  // 3. Confirmar e gravar agendamento no Supabase
+  // 3. Confirmar e gravar agendamento com verificação antiduplicação
   const handleConfirm = async () => {
     if (!selectedService || !selectedBarber || !selectedTime) return;
 
     setIsSubmitting(true);
+    setBookingError(null);
     const formattedDate = getSelectedDateString(selectedDateIndex);
 
     try {
+      // Trava antiduplicação: Checar se o horário ainda está livre no banco antes de agendar
+      const { data: existingApt } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('barber_id', selectedBarber.id)
+        .eq('date', formattedDate)
+        .eq('time_slot', selectedTime)
+        .neq('status', 'cancelled')
+        .maybeSingle();
+
+      if (existingApt) {
+        setBookingError('Este horário acabou de ser reservado. Escolha outro horário.');
+        setStep('datetime');
+        setIsSubmitting(false);
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
 
       const { error } = await supabase.from('appointments').insert({
@@ -188,11 +211,14 @@ export default function BookPage() {
         status: 'scheduled',
       });
 
-      if (error) console.error('Aviso ao salvar no banco:', error.message);
+      if (error) {
+        throw new Error(error.message);
+      }
+
       setConfirmed(true);
-    } catch (err) {
-      console.error('Erro na requisição:', err);
-      setConfirmed(true);
+    } catch (err: any) {
+      console.error('Erro na requisição de agendamento:', err);
+      setBookingError(err.message || 'Erro ao realizar agendamento. Tente novamente.');
     } finally {
       setIsSubmitting(false);
     }
@@ -200,6 +226,7 @@ export default function BookPage() {
 
   const reset = () => {
     setConfirmed(false);
+    setBookingError(null);
     setStep('service');
     setSelectedService(null);
     setSelectedBarber(null);
@@ -275,6 +302,13 @@ export default function BookPage() {
           ))}
         </div>
       </div>
+
+      {bookingError && (
+        <div className="mx-5 mt-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center gap-2.5">
+          <AlertCircle size={16} className="shrink-0 text-red-400" />
+          <span>{bookingError}</span>
+        </div>
+      )}
 
       {/* Passo 1: Serviços */}
       {step === 'service' && (
@@ -508,7 +542,7 @@ export default function BookPage() {
                 <>
                   <Check size={18} strokeWidth={3} /> Confirmar agendamento
                 </>
-              )}
+              ) }
             </button>
           ) : (
             <button
