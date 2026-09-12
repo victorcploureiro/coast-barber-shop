@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { 
   Check, ChevronLeft, ChevronRight, Scissors, Sparkles, 
   Flame, Palette, Eye, Crown, Calendar, Loader2, Plus, XCircle, AlertCircle,
@@ -23,9 +22,12 @@ const iconMap: Record<string, typeof Scissors> = {
 type Step = 'list' | 'service' | 'choose_path' | 'barber' | 'datetime' | 'confirm';
 type PathMode = 'barber' | 'datetime';
 
-export default function BookPage() {
+interface BookPageProps {
+  onNavigate?: (tab: string) => void;
+}
+
+export default function BookPage({ onNavigate }: BookPageProps) {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   const [step, setStep] = useState<Step>('list');
   const [pathMode, setPathMode] = useState<PathMode>('barber');
@@ -57,11 +59,12 @@ export default function BookPage() {
   const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  // Função para tratar o início do agendamento exigindo login
+  // Redireciona para o perfil/login se não estiver logado
   const handleStartBooking = () => {
     if (!user) {
-      // Redireciona para a rota de login/perfil caso não esteja autenticado
-      navigate('/profile'); 
+      if (onNavigate) {
+        onNavigate('profile');
+      }
       return;
     }
     setStep('service');
@@ -107,7 +110,7 @@ export default function BookPage() {
         }
       } catch (err) {
         console.error('Erro ao buscar dados:', err);
-      } finally {
+      } font-medium {
         setLoadingServices(false);
       }
     }
@@ -233,7 +236,7 @@ export default function BookPage() {
   const handleConfirm = async () => {
     if (!user) {
       setBookingError('Você precisa estar logado para agendar.');
-      navigate('/profile');
+      if (onNavigate) onNavigate('profile');
       return;
     }
 
@@ -340,7 +343,7 @@ export default function BookPage() {
                 </div>
               </div>
               <button
-                onClick={() => navigate('/profile')}
+                onClick={() => onNavigate && onNavigate('profile')}
                 className="px-3 py-1.5 rounded-lg bg-ink-800 border border-white/10 text-xs font-medium text-gold-400 hover:text-gold-300 transition-colors shrink-0"
               >
                 Entrar

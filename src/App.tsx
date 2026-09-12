@@ -16,7 +16,7 @@ export default function App() {
       case 'home':
         return <HomePage onNavigate={setActiveTab} />;
       case 'book':
-        return <BookPage />;
+        return <BookPage onNavigate={setActiveTab} />;
       case 'appointments':
         return <AppointmentsPage />;
       case 'club':
