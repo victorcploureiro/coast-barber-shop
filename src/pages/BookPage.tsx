@@ -19,13 +19,13 @@ const iconMap: Record<string, typeof Scissors> = {
   crown: Crown,
 };
 
-type Step = 'list' | 'entry_flow' | 'service' | 'barber' | 'datetime' | 'confirm';
-type EntryMode = 'service' | 'barber' | 'datetime';
+type Step = 'list' | 'service' | 'choose_path' | 'barber' | 'datetime' | 'confirm';
+type PathMode = 'barber' | 'datetime';
 
 export default function BookPage() {
   const { user } = useAuth();
   const [step, setStep] = useState<Step>('list');
-  const [entryMode, setEntryMode] = useState<EntryMode>('service');
+  const [pathMode, setPathMode] = useState<PathMode>('barber');
   const [userAppointments, setUserAppointments] = useState<any[]>([]);
   const [loadingAppts, setLoadingAppts] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -54,23 +54,18 @@ export default function BookPage() {
   const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  // Define a ordem dinâmica dos passos conforme o modo de entrada escolhido
+  // Define a sequência de passos baseada no caminho escolhido após o serviço
   const getStepOrder = (): Step[] => {
-    switch (entryMode) {
-      case 'barber':
-        return ['barber', 'service', 'datetime', 'confirm'];
-      case 'datetime':
-        return ['datetime', 'service', 'barber', 'confirm'];
-      case 'service':
-      default:
-        return ['service', 'barber', 'datetime', 'confirm'];
+    if (pathMode === 'barber') {
+      return ['service', 'choose_path', 'barber', 'datetime', 'confirm'];
     }
+    return ['service', 'choose_path', 'datetime', 'barber', 'confirm'];
   };
 
   const stepOrder = getStepOrder();
   const currentStepIndex = stepOrder.indexOf(step);
 
-  // 1. Carregar Serviços e Barbeiros do Supabase
+  // 1. Carregar Serviços e Barbeiros
   useEffect(() => {
     async function fetchServicesAndBarbers() {
       try {
@@ -99,7 +94,7 @@ export default function BookPage() {
           })));
         }
       } catch (err) {
-        console.error('Erro ao buscar dados no Supabase:', err);
+        console.error('Erro ao buscar dados:', err);
       } finally {
         setLoadingServices(false);
       }
@@ -108,7 +103,7 @@ export default function BookPage() {
     fetchServicesAndBarbers();
   }, []);
 
-  // 2. Carregar agendamentos do usuário
+  // 2. Carregar agendamentos do cliente
   const fetchUserAppointments = async () => {
     if (!user) {
       setLoadingAppts(false);
@@ -151,7 +146,6 @@ export default function BookPage() {
   };
 
   const getAvailableSlots = (dateObj: Date, allSlots: string[]) => {
-    const day = dateObj.getDay();
     if (isClosedDay(dateObj)) return [];
 
     const now = new Date();
@@ -167,7 +161,7 @@ export default function BookPage() {
       const slotTotalMinutes = hours * 60 + minutes;
 
       if (isToday && slotTotalMinutes <= currentMinutes) return false;
-      if (day === 6) return slotTotalMinutes <= 1110;
+      if (dateObj.getDay() === 6) return slotTotalMinutes <= 1110;
       return slotTotalMinutes <= 1140;
     });
   };
@@ -201,9 +195,9 @@ export default function BookPage() {
     if (step === 'datetime') fetchBookedSlots();
   }, [selectedBarber, selectedDateIndex, step]);
 
-  const startFlow = (mode: EntryMode) => {
-    setEntryMode(mode);
-    setStep(mode);
+  const selectPath = (path: PathMode) => {
+    setPathMode(path);
+    setStep(path);
   };
 
   const handleNext = () => {
@@ -220,7 +214,7 @@ export default function BookPage() {
     if (prevIdx >= 0) {
       setStep(stepOrder[prevIdx]);
     } else {
-      setStep('entry_flow');
+      setStep('list');
     }
   };
 
@@ -231,6 +225,7 @@ export default function BookPage() {
     const formattedDate = getSelectedDateString(selectedDateIndex);
 
     try {
+      // 1. Validação de conflito de horário
       const { data: existingApt } = await supabase
         .from('appointments')
         .select('id')
@@ -241,12 +236,13 @@ export default function BookPage() {
         .maybeSingle();
 
       if (existingApt) {
-        setBookingError('Este horário acabou de ser reservado. Escolha outro horário.');
+        setBookingError('Este horário acabou de ser reservado por outro cliente. Por favor, escolha outro horário.');
         setStep('datetime');
         setIsSubmitting(false);
         return;
       }
 
+      // 2. Inserção no Supabase (Trata client_id nulo para convidados caso permitido)
       const { error } = await supabase.from('appointments').insert({
         client_id: user?.id || null,
         barber_id: selectedBarber.id,
@@ -257,7 +253,12 @@ export default function BookPage() {
         status: 'scheduled',
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        if (error.code === '23503' && error.message.includes('appointment_client_id_fkey')) {
+          throw new Error('Você precisa estar logado para agendar, ou execute a SQL de liberação no banco de dados.');
+        }
+        throw new Error(error.message);
+      }
 
       setConfirmed(true);
       await fetchUserAppointments();
@@ -310,7 +311,7 @@ export default function BookPage() {
         <Header title="Agendamentos" />
         <div className="px-5 mt-4 space-y-6">
           <button
-            onClick={() => setStep('entry_flow')}
+            onClick={() => setStep('service')}
             className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20 active:scale-95 transition-transform"
           >
             <Plus size={18} strokeWidth={2.5} /> Novo Agendamento
@@ -393,71 +394,11 @@ export default function BookPage() {
     );
   }
 
-  // Tela de Escolha da Porta de Entrada do Agendamento Flexível
-  if (step === 'entry_flow') {
-    return (
-      <div className="min-h-screen pb-24 animate-fade-in">
-        <Header title="Novo Agendamento" subtitle="Como prefere iniciar seu agendamento?" />
-        <div className="px-5 mt-6 space-y-4">
-          <button
-            onClick={() => startFlow('service')}
-            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
-          >
-            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-              <Scissors size={22} className="text-gold-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-base font-semibold text-ink-100">Por Serviço</h4>
-              <p className="text-xs text-ink-300 mt-0.5">Escolha o serviço desejado primeiro</p>
-            </div>
-            <ChevronRight size={20} className="text-ink-400" />
-          </button>
-
-          <button
-            onClick={() => startFlow('barber')}
-            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
-          >
-            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-              <User size={22} className="text-gold-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-base font-semibold text-ink-100">Por Barbeiro</h4>
-              <p className="text-xs text-ink-300 mt-0.5">Selecione seu profissional favorito primeiro</p>
-            </div>
-            <ChevronRight size={20} className="text-ink-400" />
-          </button>
-
-          <button
-            onClick={() => startFlow('datetime')}
-            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
-          >
-            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-              <Clock size={22} className="text-gold-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-base font-semibold text-ink-100">Por Horário / Data</h4>
-              <p className="text-xs text-ink-300 mt-0.5">Encontre a melhor data e horário para você</p>
-            </div>
-            <ChevronRight size={20} className="text-ink-400" />
-          </button>
-
-          <div className="pt-4">
-            <button
-              onClick={() => setStep('list')}
-              className="w-full py-3 rounded-xl bg-ink-800 text-ink-300 text-sm font-medium hover:text-ink-100 transition-colors"
-            >
-              Voltar aos meus agendamentos
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen pb-44">
-      <Header title="Novo Agendamento" subtitle="Preencha os detalhes para agendar" />
+      <Header title="Novo Agendamento" subtitle="Siga os passos para realizar sua reserva" />
 
+      {/* Indicador de Progresso */}
       <div className="px-5 mt-4">
         <div className="flex items-center gap-2">
           {stepOrder.map((s, i) => (
@@ -477,8 +418,10 @@ export default function BookPage() {
         </div>
       )}
 
+      {/* PASSO 1: Escolha do Serviço */}
       {step === 'service' && (
         <section className="px-5 mt-5 animate-fade-in">
+          <h3 className="text-sm font-semibold text-ink-100 mb-3">Selecione o serviço</h3>
           {loadingServices ? (
             <div className="py-12 flex items-center justify-center gap-2 text-ink-300">
               <Loader2 size={20} className="animate-spin text-gold-400" />
@@ -515,8 +458,46 @@ export default function BookPage() {
         </section>
       )}
 
+      {/* PASSO 2: Como prefere continuar */}
+      {step === 'choose_path' && (
+        <section className="px-5 mt-5 animate-fade-in space-y-4">
+          <h3 className="text-sm font-semibold text-ink-100 mb-1">Como prefere continuar?</h3>
+          <p className="text-xs text-ink-300 mb-4">Escolha a próxima etapa do seu agendamento:</p>
+
+          <button
+            onClick={() => selectPath('barber')}
+            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
+          >
+            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
+              <User size={22} className="text-gold-400" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-base font-semibold text-ink-100">Escolher Barbeiro</h4>
+              <p className="text-xs text-ink-300 mt-0.5">Selecione o profissional de sua preferência primeiro</p>
+            </div>
+            <ChevronRight size={20} className="text-ink-400" />
+          </button>
+
+          <button
+            onClick={() => selectPath('datetime')}
+            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
+          >
+            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
+              <Clock size={22} className="text-gold-400" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-base font-semibold text-ink-100">Escolher Horário / Data</h4>
+              <p className="text-xs text-ink-300 mt-0.5">Veja os dias e horários disponíveis primeiro</p>
+            </div>
+            <ChevronRight size={20} className="text-ink-400" />
+          </button>
+        </section>
+      )}
+
+      {/* PASSO: Escolha do Barbeiro */}
       {step === 'barber' && (
         <section className="px-5 mt-5 animate-fade-in">
+          <h3 className="text-sm font-semibold text-ink-100 mb-3">Selecione o barbeiro</h3>
           <div className="grid grid-cols-2 gap-3">
             {dbBarbers.map((barber) => {
               const isSelected = selectedBarber?.id === barber.id;
@@ -542,6 +523,7 @@ export default function BookPage() {
         </section>
       )}
 
+      {/* PASSO: Escolha da Data / Horário */}
       {step === 'datetime' && (
         <section className="px-5 mt-5 animate-fade-in">
           <h3 className="text-sm font-semibold text-ink-100 mb-3">Escolha a data</h3>
@@ -605,6 +587,7 @@ export default function BookPage() {
         </section>
       )}
 
+      {/* PASSO FINAL: Confirmação */}
       {step === 'confirm' && selectedService && selectedBarber && (
         <section className="px-5 mt-5 animate-fade-in">
           <div className="card p-5">
@@ -619,6 +602,7 @@ export default function BookPage() {
         </section>
       )}
 
+      {/* Barra de Ações do Rodapé */}
       <div className="fixed bottom-16 left-0 right-0 z-30 px-5 pt-3 pb-3 glass-strong border-t border-white/5">
         <div className="flex items-center gap-3">
           <button
@@ -627,6 +611,7 @@ export default function BookPage() {
           >
             <ChevronLeft size={20} className="text-ink-200" />
           </button>
+          
           {step === 'confirm' ? (
             <button
               disabled={isSubmitting}
@@ -635,7 +620,7 @@ export default function BookPage() {
             >
               {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} strokeWidth={3} />} Confirmar agendamento
             </button>
-          ) : (
+          ) : step !== 'choose_path' ? (
             <button
               onClick={handleNext}
               disabled={
@@ -647,7 +632,7 @@ export default function BookPage() {
             >
               Continuar <ChevronRight size={18} />
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
