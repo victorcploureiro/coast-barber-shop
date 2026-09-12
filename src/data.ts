@@ -229,7 +229,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     period: 'mês',
     features: [
       '2 Barboterapias completas por mês',
-      'Atendimento exclusivo de Terça e Quarta',
+      'Atendimento exclusivo de Segunda a Quarta',
       'Uso exclusivo do titular do cadastro'
     ]
   },
@@ -241,7 +241,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     period: 'mês',
     features: [
       '2 Cortes de cabelo por mês',
-      'Atendimento exclusivo de Terça e Quarta',
+      'Atendimento exclusivo de Segunda a Quarta',
       'Uso exclusivo do titular do cadastro'
     ]
   },
@@ -255,7 +255,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     features: [
       '1 Combo Cabelo + Barba + 1 Corte de Cabelo',
       'Compartilhável com filho no mesmo cadastro',
-      'Válido de Terça a Sábado'
+      'Válido de Segunda a Sábado'
     ]
   },
   {
@@ -267,7 +267,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     features: [
       '4 Cortes de cabelo mensais no total',
       'Uso flexível entre Pai e Filho',
-      'Válido de Terça a Sábado'
+      'Válido de Segunda a Sábado'
     ]
   },
   {
@@ -279,7 +279,7 @@ export const subscriptionPlans: SubscriptionPlan[] = [
     features: [
       '3 Créditos livres (Corte ou Barba)',
       'Compartilhável no mesmo cadastro',
-      'Válido de Terça a Sábado'
+      'Válido de Segunda a Sábado'
     ]
   }
 ];
@@ -328,4 +328,11 @@ export const appointments = [
     status: 'completed',
     price: 50
   }
+];
+
+// HORÁRIOS DISPONÍVEIS PARA AGENDAMENTO (BOOKPAGE)
+export const timeSlots = [
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00'
 ];
