@@ -1,8 +1,14 @@
-import { Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, Flame, Palette, Eye, Crown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { 
+  Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, 
+  Flame, Palette, Eye, Crown, Calendar, User
+} from 'lucide-react';
 import Header from '@/components/Header';
-import { services, barbers, heroImage, shopInterior, beardGrooming } from '@/data';
+import { services, barbers as defaultBarbers, heroImage, shopInterior, beardGrooming } from '@/data';
 import { BRAND_CONFIG } from '@/config/brand';
-import type { TabKey } from '@/types';
+import type { TabKey, Barber } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 const iconMap: Record<string, typeof Scissors> = {
   scissors: Scissors,
@@ -18,32 +24,155 @@ interface HomePageProps {
 }
 
 export default function HomePage({ onNavigate }: HomePageProps) {
+  const { user } = useAuth();
+  const [nextAppointment, setNextAppointment] = useState<any>(null);
+  const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
+  const [userName, setUserName] = useState<string>('');
+
+  useEffect(() => {
+    // 1. Carregar barbeiros cadastrados no Supabase
+    async function fetchBarbers() {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('name');
+
+        if (!error && data && data.length > 0) {
+          const mapped: Barber[] = data.map((b) => ({
+            id: b.id,
+            name: b.name || 'Barbeiro',
+            role: 'Barbeiro',
+            image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+            rating: 5.0,
+            reviews: 12,
+            bio: '',
+            specialties: []
+          }));
+          setDbBarbers(mapped);
+        } else {
+          setDbBarbers(defaultBarbers);
+        }
+      } catch {
+        setDbBarbers(defaultBarbers);
+      }
+    }
+
+    fetchBarbers();
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setNextAppointment(null);
+      setUserName('');
+      return;
+    }
+
+    // 2. Carregar nome do usuário logado e o próximo agendamento ativo
+    async function fetchUserDataAndAppointment() {
+      try {
+        // Nome do perfil
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.name) {
+          setUserName(profile.name.split(' ')[0]);
+        } else {
+          setUserName(user.email?.split('@')[0] || '');
+        }
+
+        // Buscar próximo agendamento ativo
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { data: apts, error } = await supabase
+          .from('appointments')
+          .select('*, service:services(name), barber:profiles!appointments_barber_id_fkey(name)')
+          .eq('client_id', user.id)
+          .eq('status', 'scheduled')
+          .gte('date', todayStr)
+          .order('date', { ascending: true })
+          .order('time_slot', { ascending: true })
+          .limit(1);
+
+        if (!error && apts && apts.length > 0) {
+          setNextAppointment(apts[0]);
+        } else {
+          setNextAppointment(null);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar dados na Home:', err);
+      }
+    }
+
+    fetchUserDataAndAppointment();
+  }, [user]);
+
+  const activeBarbersList = dbBarbers.length > 0 ? dbBarbers : defaultBarbers;
+
   return (
     <div className="min-h-screen pb-24">
-      <Header title="" showLocation />
+      <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
 
-      {/* Hero */}
-      <section className="relative mx-5 mt-2 rounded-2xl overflow-hidden h-56 animate-slide-up">
-        <img src={heroImage} alt={BRAND_CONFIG.name} className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/60 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-ink-950/80 to-transparent" />
-        <div className="absolute bottom-0 left-0 p-5">
-          {/* Tagline vinda do BRAND_CONFIG */}
-          <p className="text-gold-400 text-xs font-semibold tracking-widest uppercase mb-1">
-            {BRAND_CONFIG.tagline}
-          </p>
-          <h2 className="font-display text-3xl tracking-wide text-white leading-none uppercase">
-            A NAVALHA QUE<br />DEFINE SEU ESTILO
-          </h2>
-          <button
-            onClick={() => onNavigate('book')}
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl gold-gradient text-ink-950 text-sm font-semibold active:scale-95 transition-transform"
-          >
-            Agendar agora
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </section>
+      {/* Se houver agendamento confirmado, mostra Card em destaque; se não, mostra o Banner Hero */}
+      {nextAppointment ? (
+        <section className="mx-5 mt-2 animate-slide-up">
+          <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-full gold-gradient text-ink-950">
+                Próximo Agendamento
+              </span>
+              <span className="text-xs text-ink-300 flex items-center gap-1">
+                <Calendar size={13} className="text-gold-400" />
+                {nextAppointment.date}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-4 my-2">
+              <div className="h-12 w-12 rounded-xl gold-gradient flex items-center justify-center text-ink-950 shrink-0">
+                <Scissors size={24} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-ink-100 truncate">
+                  {nextAppointment.service?.name || 'Serviço Agendado'}
+                </h3>
+                <p className="text-xs text-ink-300">
+                  com <span className="text-gold-400 font-medium">{nextAppointment.barber?.name || 'Barbeiro'}</span> às <span className="text-ink-100 font-semibold">{nextAppointment.time_slot}</span>
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigate('profile')}
+              className="mt-3 w-full py-2.5 rounded-xl bg-ink-800/80 border border-white/10 text-xs font-semibold text-ink-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            >
+              Ver detalhes no perfil <ChevronRight size={14} />
+            </button>
+          </div>
+        </section>
+      ) : (
+        <section className="relative mx-5 mt-2 rounded-2xl overflow-hidden h-56 animate-slide-up">
+          <img src={heroImage} alt={BRAND_CONFIG.name} className="absolute inset-0 w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-ink-950/80 to-transparent" />
+          <div className="absolute bottom-0 left-0 p-5">
+            <p className="text-gold-400 text-xs font-semibold tracking-widest uppercase mb-1">
+              {BRAND_CONFIG.tagline}
+            </p>
+            <h2 className="font-display text-3xl tracking-wide text-white leading-none uppercase">
+              A NAVALHA QUE<br />DEFINE SEU ESTILO
+            </h2>
+            <button
+              onClick={() => onNavigate('book')}
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl gold-gradient text-ink-950 text-sm font-semibold active:scale-95 transition-transform"
+            >
+              Agendar agora
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Stats */}
       <section className="grid grid-cols-3 gap-3 px-5 mt-4">
@@ -71,7 +200,11 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           {services.slice(0, 4).map((service) => {
             const Icon = iconMap[service.icon] ?? Scissors;
             return (
-              <div key={service.id} className="card card-hover p-4 flex items-center gap-4">
+              <div 
+                key={service.id} 
+                onClick={() => onNavigate('book')}
+                className="card card-hover p-4 flex items-center gap-4 cursor-pointer"
+              >
                 <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
                   <Icon size={22} className="text-gold-400" />
                 </div>
@@ -102,8 +235,12 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           </button>
         </div>
         <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
-          {barbers.map((barber) => (
-            <div key={barber.id} className="card card-hover shrink-0 w-40 overflow-hidden">
+          {activeBarbersList.map((barber) => (
+            <div 
+              key={barber.id} 
+              onClick={() => onNavigate('book')}
+              className="card card-hover shrink-0 w-40 overflow-hidden cursor-pointer"
+            >
               <div className="h-44 overflow-hidden">
                 <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
               </div>
