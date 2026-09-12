@@ -47,6 +47,29 @@ export default function BookPage() {
   const stepOrder: Step[] = ['service', 'barber', 'datetime', 'confirm'];
   const currentStepIndex = stepOrder.indexOf(step);
 
+  // --- Regras de Negócio de Horário e Funcionamento ---
+  const isClosedDay = (dateObj: Date) => {
+    const day = dateObj.getDay();
+    return day === 0 || day === 1; // 0 = Domingo, 1 = Segunda
+  };
+
+  const getAvailableSlots = (dateObj: Date, allSlots: string[]) => {
+    const day = dateObj.getDay();
+    if (isClosedDay(dateObj)) return [];
+
+    return allSlots.filter((slot) => {
+      const [hours, minutes] = slot.split(':').map(Number);
+      const totalMinutes = hours * 60 + minutes;
+
+      if (day === 6) {
+        // Sábado até 18:30 (1110 minutos)
+        return totalMinutes <= 1110;
+      }
+      // Terça a Sexta até 19:00 (1140 minutos)
+      return totalMinutes <= 1140;
+    });
+  };
+
   // Data formatada para YYYY-MM-DD
   const getSelectedDateString = (index: number) => {
     const dateObj = dates[index];
@@ -328,15 +351,22 @@ export default function BookPage() {
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
             {dates.map((date, i) => {
               const isSelected = selectedDateIndex === i;
+              const isClosed = isClosedDay(date);
+
               return (
                 <button
                   key={i}
+                  disabled={isClosed}
                   onClick={() => {
                     setSelectedDateIndex(i);
                     setSelectedTime(null);
                   }}
                   className={`shrink-0 w-16 py-3 rounded-xl text-center transition-all ${
-                    isSelected ? 'gold-gradient text-ink-950' : 'card text-ink-200 card-hover'
+                    isClosed
+                      ? 'bg-ink-900/40 text-ink-600 opacity-40 cursor-not-allowed border border-white/5'
+                      : isSelected
+                      ? 'gold-gradient text-ink-950 font-bold shadow-md shadow-gold-500/10'
+                      : 'card text-ink-200 card-hover'
                   }`}
                 >
                   <p className={`text-[10px] font-medium ${isSelected ? 'text-ink-950/70' : 'text-ink-400'}`}>
@@ -344,7 +374,7 @@ export default function BookPage() {
                   </p>
                   <p className="text-xl font-bold mt-0.5">{date.getDate()}</p>
                   <p className={`text-[10px] ${isSelected ? 'text-ink-950/70' : 'text-ink-400'}`}>
-                    {months[date.getMonth()]}
+                    {isClosed ? 'Fechado' : months[date.getMonth()]}
                   </p>
                 </button>
               );
@@ -353,14 +383,19 @@ export default function BookPage() {
 
           <h3 className="text-sm font-semibold text-ink-100 mt-5 mb-3">Horários disponíveis</h3>
           
-          {loadingSlots ? (
+          {isClosedDay(dates[selectedDateIndex]) ? (
+            <div className="py-8 text-center text-ink-400 card p-4 border border-white/5">
+              <p className="text-sm font-medium text-ink-200">A barbearia não abre neste dia.</p>
+              <p className="text-xs text-ink-400 mt-1">Selecione uma data de Terça a Sábado.</p>
+            </div>
+          ) : loadingSlots ? (
             <div className="py-8 text-center text-ink-300 flex items-center justify-center gap-2">
               <Loader2 size={18} className="animate-spin text-gold-400" />
               <span className="text-xs">Verificando agenda...</span>
             </div>
           ) : (
             <div className="grid grid-cols-4 gap-2">
-              {timeSlots.map((time) => {
+              {getAvailableSlots(dates[selectedDateIndex], timeSlots).map((time) => {
                 const isBooked = bookedSlots.includes(time);
                 const isSelected = selectedTime === time;
 
@@ -373,7 +408,7 @@ export default function BookPage() {
                       isSelected
                         ? 'gold-gradient text-ink-950 font-bold'
                         : isBooked
-                        ? 'bg-ink-850 text-ink-500 line-through cursor-not-allowed border border-transparent'
+                        ? 'bg-ink-850 text-ink-500 line-through cursor-not-allowed border border-transparent opacity-50'
                         : 'card text-ink-200 card-hover'
                     }`}
                   >
