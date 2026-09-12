@@ -11,7 +11,7 @@ export default function Header({ title, subtitle, showLocation }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 glass-strong border-b border-white/5">
       <div className="flex items-center justify-between px-5 pt-5 pb-3">
-        <div className="flex items-center gap-3">\
+        <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl overflow-hidden border border-white/10 shadow-lg shadow-gold-500/10 flex items-center justify-center bg-ink-900">
             <img 
               src={BRAND_CONFIG.assets.iconUrl} 
@@ -29,7 +29,7 @@ export default function Header({ title, subtitle, showLocation }: HeaderProps) {
             {showLocation && (
               <p className="text-[11px] text-ink-300 flex items-center gap-1 mt-0.5">
                 <MapPin size={10} className="text-gold-400" />
-                Av. Beira Mar, 1200 — Florianópolis
+                {BRAND_CONFIG.address}
               </p>
             )}
           </div>
