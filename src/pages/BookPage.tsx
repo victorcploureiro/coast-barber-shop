@@ -56,7 +56,7 @@ export default function BookPage() {
     return `${year}-${month}-${day}`;
   };
 
-  // 1. Carregar barbeiros da tabela public.profiles (ou fallback para local)
+  // 1. Carregar barbeiros da tabela public.profiles
   useEffect(() => {
     async function fetchBarbers() {
       try {
@@ -174,7 +174,7 @@ export default function BookPage() {
 
   if (confirmed) {
     return (
-      <div className="min-h-screen pb-120">
+      <div className="min-h-screen pb-44">
         <Header title="Agendamento" />
         <div className="flex flex-col items-center justify-center px-5 mt-16 animate-scale-in">
           <div className="h-20 w-20 rounded-full gold-gradient flex items-center justify-center mb-5 shadow-lg shadow-gold-500/30">
@@ -214,7 +214,7 @@ export default function BookPage() {
   }
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-44">
       <Header title="Agendar Horário" subtitle="Escolha o serviço, barbeiro e horário" />
 
       {/* Barra de Progresso */}
@@ -435,7 +435,7 @@ export default function BookPage() {
       )}
 
       {/* Botões Fixos de Navegação */}
-      <div className="fixed bottom-[72px] left-0 right-0 z-20 px-5 pt-3 pb-3 glass-strong border-t border-white/5">
+      <div className="fixed bottom-16 left-0 right-0 z-30 px-5 pt-3 pb-3 glass-strong border-t border-white/5">
         <div className="flex items-center gap-3">
           {step !== 'service' && (
             <button
@@ -449,7 +449,7 @@ export default function BookPage() {
             <button
               disabled={isSubmitting}
               onClick={handleConfirm}
-              className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform flex items-center justify-center gap-2"
+              className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20"
             >
               {isSubmitting ? (
                 <>
@@ -469,7 +469,7 @@ export default function BookPage() {
                 (step === 'barber' && !selectedBarber) ||
                 (step === 'datetime' && !selectedTime)
               }
-              className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2"
+              className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20"
             >
               Continuar <ChevronRight size={18} />
             </button>
