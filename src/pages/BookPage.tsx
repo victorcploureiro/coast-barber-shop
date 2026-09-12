@@ -6,7 +6,7 @@ import {
 import Header from '@/components/Header';
 import { services, barbers as defaultBarbers, timeSlots } from '@/data';
 import type { Service, Barber } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../lib/supabase';
 
 const iconMap: Record<string, typeof Scissors> = {
   scissors: Scissors,
