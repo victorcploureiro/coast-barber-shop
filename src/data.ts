@@ -1,70 +1,331 @@
-import type { Service, Barber, Product, ClubTier, Appointment } from './types';
+import { BRAND_CONFIG } from './config/brand';
+
+export const heroImage = "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1000";
+export const shopInterior = "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&q=80&w=600";
+export const beardGrooming = "https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&q=80&w=600";
+
+export interface Service {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  duration: number;
+  category: 'cabelo' | 'barba' | 'combo' | 'quimica' | 'cuidados';
+  icon: string;
+}
 
 export const services: Service[] = [
-  { id: 's1', name: 'Corte Clássico', description: 'Corte masculino com tesoura e máquina, finalização com pomada.', price: 45, duration: 40, icon: 'scissors' },
-  { id: 's2', name: 'Corte + Barba', description: 'Corte completo com toalha quente, navalha e hidratação.', price: 65, duration: 60, icon: 'sparkles' },
-  { id: 's3', name: 'Barba Premium', description: 'Modelagem de barba com toalha quente, óleo e pós-barba.', price: 35, duration: 30, icon: 'flame' },
-  { id: 's4', name: 'Pigmentação', description: 'Pigmentação de barba e cabelo para disfarçar falhas.', price: 55, duration: 45, icon: 'palette' },
-  { id: 's5', name: 'Sobrancelha', description: 'Design e alinhamento de sobrancelha na navalha.', price: 20, duration: 15, icon: 'eye' },
-  { id: 's6', name: 'Platinum Experience', description: 'Corte + barba + hidratação + lavagem + bebida cortesia.', price: 120, duration: 90, icon: 'crown' },
+  // CORTE & ESTILO
+  {
+    id: 'corte-coast',
+    name: 'Corte Coast / Fade',
+    description: 'Corte sob medida (clássico ou degradê), alinhamento de pezinho e finalização com pomada.',
+    price: 50,
+    duration: 30,
+    category: 'cabelo',
+    icon: 'scissors'
+  },
+  {
+    id: 'corte-sobrancelha',
+    name: 'Corte + Sobrancelha',
+    description: 'Design de corte completo alinhado ao design de sobrancelha na navalha.',
+    price: 65,
+    duration: 30,
+    category: 'cabelo',
+    icon: 'sparkles'
+  },
+
+  // BARBA & RITUAL
+  {
+    id: 'barboterapia-coast',
+    name: 'Barboterapia Coast',
+    description: 'Modelagem com toalha quente, óleos essenciais, esfoliação facial e acabamento na navalha.',
+    price: 50,
+    duration: 30,
+    category: 'barba',
+    icon: 'flame'
+  },
+  {
+    id: 'barba-pezinho',
+    name: 'Barba + Pezinho',
+    description: 'Ritual de barboterapia completo acompanhado da manutenção do contorno/pezinho do cabelo.',
+    price: 65,
+    duration: 30,
+    category: 'barba',
+    icon: 'flame'
+  },
+  {
+    id: 'barba-sobrancelha',
+    name: 'Barba + Sobrancelha',
+    description: 'Modelagem de barba com acabamento na navalha e alinhamento de sobrancelhas.',
+    price: 65,
+    duration: 30,
+    category: 'barba',
+    icon: 'flame'
+  },
+  {
+    id: 'pigmentacao-barba',
+    name: 'Pigmentação de Barba',
+    description: 'Cobertura sutil e uniforme de fios brancos ou falhas para um visual encorpado.',
+    price: 50,
+    duration: 15,
+    category: 'barba',
+    icon: 'palette'
+  },
+
+  // COMBOS
+  {
+    id: 'combo-executive',
+    name: 'Combo Coast Executive',
+    description: 'A experiência completa: Corte de cabelo sob medida acompanhado do ritual tradicional de barba.',
+    price: 100,
+    duration: 60,
+    category: 'combo',
+    icon: 'crown'
+  },
+
+  // QUÍMICOS
+  {
+    id: 'luzes-mechas',
+    name: 'Luzes & Mechas',
+    description: 'Aclaramento técnico de mechas na touca para iluminar o visual com naturalidade.',
+    price: 80,
+    duration: 30,
+    category: 'quimica',
+    icon: 'palette'
+  },
+  {
+    id: 'platinado-global',
+    name: 'Platinado Global',
+    description: 'Descoloração total de alta performance, tonalização precisa e hidratação profunda.',
+    price: 200,
+    duration: 180,
+    category: 'quimica',
+    icon: 'sparkles'
+  },
+  {
+    id: 'relaxamento-capilar',
+    name: 'Relaxamento & Suavização',
+    description: 'Redução de volume e controle de cachos/fios com toque macio e acabamento natural.',
+    price: 50,
+    duration: 30,
+    category: 'quimica',
+    icon: 'scissors'
+  },
+  {
+    id: 'selagem-termica',
+    name: 'Selagem Térmica',
+    description: 'Alinhamento capilar para redução de frizz e disciplina dos fios.',
+    price: 80,
+    duration: 30,
+    category: 'quimica',
+    icon: 'scissors'
+  },
+  {
+    id: 'camuflagem-grisalhos',
+    name: 'Camuflagem de Grisalhos',
+    description: 'Tonalização semipermanente sem amônia para suavizar o grisalho sem marcas.',
+    price: 80,
+    duration: 30,
+    category: 'quimica',
+    icon: 'palette'
+  },
+
+  // CUIDADOS & WAXING
+  {
+    id: 'waxing-nariz',
+    name: 'Waxing Nariz',
+    description: 'Remoção rápida e higiênica de pelos nasais com cera específica.',
+    price: 20,
+    duration: 10,
+    category: 'cuidados',
+    icon: 'sparkles'
+  },
+  {
+    id: 'waxing-orelha',
+    name: 'Waxing Orelhas',
+    description: 'Higienização e remoção de pelos das orelhas para um visual impecável.',
+    price: 20,
+    duration: 15,
+    category: 'cuidados',
+    icon: 'sparkles'
+  }
 ];
+
+export interface Barber {
+  id: string;
+  name: string;
+  role: string;
+  rating: number;
+  reviews: number;
+  likes: number;
+  image: string;
+}
 
 export const barbers: Barber[] = [
-  { id: 'b1', name: 'Rafael Costa', role: 'Master Barber', rating: 4.9, reviews: 312, image: 'https://images.pexels.com/photos/4625626/pexels-photo-4625626.jpeg?auto=compress&cs=tinysrgb&h=650&w=940' },
-  { id: 'b2', name: 'Diego Martins', role: 'Senior Barber', rating: 4.8, reviews: 208, image: 'https://images.pexels.com/photos/897263/pexels-photo-897263.jpeg?auto=compress&cs=tinysrgb&h=650&w=940' },
-  { id: 'b3', name: 'Lucas Ferreira', role: 'Barber', rating: 4.7, reviews: 156, image: 'https://images.pexels.com/photos/7447151/pexels-photo-7447151.jpeg?auto=compress&cs=tinysrgb&h=650&w=940' },
-  { id: 'b4', name: 'Bruno Almeida', role: 'Especialista em Barba', rating: 5.0, reviews: 189, image: 'https://images.pexels.com/photos/3998424/pexels-photo-3998424.jpeg?auto=compress&cs=tinysrgb&h=650&w=940' },
+  {
+    id: 'viny-costa',
+    name: 'Viny Costa',
+    role: 'Barbeiro / Fundador',
+    rating: 5.0,
+    reviews: 142,
+    likes: 310,
+    image: 'https://d39p7gjvbgwtet.cloudfront.net/Pessoas/120x120/p_foto_000727493.jpg?v=20260225160400'
+  },
+  {
+    id: 'nicolas',
+    name: 'Nicolas',
+    role: 'Barbeiro',
+    rating: 4.9,
+    reviews: 98,
+    likes: 215,
+    image: 'https://d39p7gjvbgwtet.cloudfront.net/Pessoas/120x120/p_foto_000492268.jpg?v=20260302091200'
+  },
+  {
+    id: 'kaua',
+    name: 'Kauã',
+    role: 'Barbeiro',
+    rating: 4.9,
+    reviews: 76,
+    likes: 180,
+    image: 'https://d39p7gjvbgwtet.cloudfront.net/Pessoas/120x120/p_foto_000730129.jpg?v=20260528094700'
+  },
+  {
+    id: 'roberto',
+    name: 'Roberto',
+    role: 'Barbeiro',
+    rating: 4.8,
+    reviews: 64,
+    likes: 145,
+    image: 'https://d39p7gjvbgwtet.cloudfront.net/Pessoas/120x120/p_foto_000045328.jpg?v=20260416131500'
+  },
+  {
+    id: 'joao-paulo',
+    name: 'João Paulo',
+    role: 'Barbeiro',
+    rating: 4.9,
+    reviews: 82,
+    likes: 195,
+    image: 'https://d39p7gjvbgwtet.cloudfront.net/Pessoas/120x120/p_foto_000584545.jpg?v=20260213112900'
+  }
 ];
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  badge?: string;
+  price: number;
+  period: string;
+  features: string[];
+  popular?: boolean;
+}
+
+export const subscriptionPlans: SubscriptionPlan[] = [
+  {
+    id: 'club-barba-basic',
+    name: 'Coast Club: Barba Essential',
+    badge: 'Seg a Qua',
+    price: 89.9,
+    period: 'mês',
+    features: [
+      '2 Barboterapias completas por mês',
+      'Atendimento exclusivo de Terça e Quarta',
+      'Uso exclusivo do titular do cadastro'
+    ]
+  },
+  {
+    id: 'club-corte-basic',
+    name: 'Coast Club: Corte Essential',
+    badge: 'Seg a Qua',
+    price: 89.9,
+    period: 'mês',
+    features: [
+      '2 Cortes de cabelo por mês',
+      'Atendimento exclusivo de Terça e Quarta',
+      'Uso exclusivo do titular do cadastro'
+    ]
+  },
+  {
+    id: 'club-duo-cabelo-barba',
+    name: 'Coast Club: Duo Cabelo & Barba',
+    badge: 'Mais Vendido',
+    popular: true,
+    price: 138.9,
+    period: 'mês',
+    features: [
+      '1 Combo Cabelo + Barba + 1 Corte de Cabelo',
+      'Compartilhável com filho no mesmo cadastro',
+      'Válido de Terça a Sábado'
+    ]
+  },
+  {
+    id: 'club-pai-filho-4',
+    name: 'Coast Club: Pai & Filho (4 Cortes)',
+    badge: 'Família',
+    price: 179.9,
+    period: 'mês',
+    features: [
+      '4 Cortes de cabelo mensais no total',
+      'Uso flexível entre Pai e Filho',
+      'Válido de Terça a Sábado'
+    ]
+  },
+  {
+    id: 'club-flex-3',
+    name: 'Coast Club: Freedom (3 Serviços)',
+    badge: 'Flexível',
+    price: 138.9,
+    period: 'mês',
+    features: [
+      '3 Créditos livres (Corte ou Barba)',
+      'Compartilhável no mesmo cadastro',
+      'Válido de Terça a Sábado'
+    ]
+  }
+];
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  image: string;
+}
 
 export const products: Product[] = [
-  { id: 'p1', name: 'Pomada Matte Strong', brand: 'Coast Premium', price: 38, category: 'Cabelo', image: 'https://images.pexels.com/photos/5970246/pexels-photo-5970246.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', description: 'Fixação extra forte com acabamento fosco natural.' },
-  { id: 'p2', name: 'Óleo para Barba', brand: 'Coast Grooming', price: 32, category: 'Barba', image: 'https://images.pexels.com/photos/3998408/pexels-photo-3998408.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', description: 'Hidrata e amacia a barba com fragrância amadeirada.' },
-  { id: 'p3', name: 'Shampoo Detox', brand: 'Coast Care', price: 28, category: 'Cuidados', image: 'https://images.pexels.com/photos/4969838/pexels-photo-4969838.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', description: 'Limpeza profunda sem ressecar, revitaliza o couro.' },
-  { id: 'p4', name: 'Cera Modeladora', brand: 'Coast Premium', price: 42, category: 'Cabelo', image: 'https://images.pexels.com/photos/4969874/pexels-photo-4969874.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', description: 'Modelagem flexível com brilho sutil e sem flakes.' },
-  { id: 'p5', name: 'Balm Pós-Barba', brand: 'Coast Grooming', price: 35, category: 'Cuidados', image: 'https://images.pexels.com/photos/5853395/pexels-photo-5853395.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', description: 'Acalma a pele e previne irritações após o barbear.' },
-  { id: 'p6', name: 'Kit Coast Completo', brand: 'Coast Premium', price: 149, category: 'Kits', image: 'https://images.pexels.com/photos/897263/pexels-photo-897263.jpeg?auto=compress&cs=tinysrgb&h=650&w=940', description: 'Pomada + óleo + shampoo + balm em estojo premium.' },
-];
-
-export const clubTiers: ClubTier[] = [
   {
-    name: 'Bronze',
-    points: '0 - 199 pts',
-    color: 'from-amber-700 to-amber-900',
-    perks: ['10% off em produtos', 'Lembretes de agendamento'],
+    id: 'prod-1',
+    name: 'Pomada Matte Modeladora',
+    category: 'Cabelo',
+    price: 55,
+    image: 'https://images.unsplash.com/photo-1608248597260-6578613690d2?auto=format&fit=crop&q=80&w=400'
   },
   {
-    name: 'Prata',
-    points: '200 - 499 pts',
-    color: 'from-slate-400 to-slate-600',
-    perks: ['15% off em produtos', 'Prioridade no agendamento', 'Bebida cortesia'],
+    id: 'prod-2',
+    name: 'Óleo Hidratante para Barba',
+    category: 'Barba',
+    price: 48,
+    image: 'https://images.unsplash.com/photo-1626285861696-9f0bf5a49c6d?auto=format&fit=crop&q=80&w=400'
+  }
+];
+
+export const appointments = [
+  {
+    id: 'apt-1',
+    service: 'Combo Coast Executive',
+    barber: 'Viny Costa',
+    date: '18 Setembro',
+    time: '15:00',
+    status: 'upcoming',
+    price: 100
   },
   {
-    name: 'Ouro',
-    points: '500 - 999 pts',
-    color: 'from-gold-400 to-gold-600',
-    perks: ['20% off em produtos', 'Agendamento prioritário', 'Bebida cortesia', 'Brinde mensal'],
-  },
-  {
-    name: 'Platinum',
-    points: '1000+ pts',
-    color: 'from-cyan-400 to-blue-600',
-    perks: ['25% off em produtos', 'Acesso VIP a horários', 'Corte de brinde a cada 5', 'Atendimento dedicado'],
-  },
+    id: 'apt-2',
+    service: 'Corte Coast / Fade',
+    barber: 'Nicolas',
+    date: '28 Agosto',
+    time: '10:30',
+    status: 'completed',
+    price: 50
+  }
 ];
-
-export const appointments: Appointment[] = [
-  { id: 'a1', service: 'Corte + Barba', barber: 'Rafael Costa', date: '15 Set 2026', time: '14:30', status: 'upcoming' },
-  { id: 'a2', service: 'Corte Clássico', barber: 'Diego Martins', date: '02 Set 2026', time: '10:00', status: 'completed' },
-  { id: 'a3', service: 'Barba Premium', barber: 'Bruno Almeida', date: '28 Ago 2026', time: '16:00', status: 'completed' },
-  { id: 'a4', service: 'Corte + Barba', barber: 'Rafael Costa', date: '20 Ago 2026', time: '15:30', status: 'completed' },
-];
-
-export const timeSlots: string[] = [
-  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-  '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
-];
-
-export const heroImage = 'https://images.pexels.com/photos/5970246/pexels-photo-5970246.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
-export const shopInterior = 'https://images.pexels.com/photos/4969838/pexels-photo-4969838.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
-export const beardGrooming = 'https://images.pexels.com/photos/5853395/pexels-photo-5853395.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
