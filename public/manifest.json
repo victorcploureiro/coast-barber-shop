@@ -1,16 +1,16 @@
 {
-  "short_name": "Coast Barber",
+  "short_name": "Coast",
   "name": "Coast Barber Shop",
   "description": "O Clássico Nunca Morre",
   "icons": [
     {
-      "src": "https://yklvdivaomflpkpmjmul.supabase.co/storage/v1/object/public/brand/coast_icon.png",
+      "src": "https://yklvdivaomflpkpmjmul.supabase.co/storage/v1/object/public/assets/coast_icon.png",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "https://yklvdivaomflpkpmjmul.supabase.co/storage/v1/object/public/brand/coast_icon.png",
+      "src": "https://yklvdivaomflpkpmjmul.supabase.co/storage/v1/object/public/assets/coast_icon.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
