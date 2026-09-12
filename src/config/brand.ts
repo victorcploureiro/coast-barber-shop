@@ -3,7 +3,7 @@ export const BRAND_CONFIG = {
   tagline: 'O Clássico Nunca Morre',
   founder: 'Viny Costa',
   foundedYear: 2019,
-  address: 'Av. Beira Mar, 1200 — Florianópolis',
+  address: 'Av. do Café, 485 - Vila Guarani, São Paulo - SP',
   bio: 'Idealizada em 2019 por Viny Costa (atuante na região desde 2006). Especialistas em cortes sociais clássicos, degradês e técnicas de tesoura para todos os tipos de cabelo, do oriental ao afro.',
   
   // Contato e Atendimento
