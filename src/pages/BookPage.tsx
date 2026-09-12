@@ -54,21 +54,35 @@ export default function BookPage() {
   };
 
   const getAvailableSlots = (dateObj: Date, allSlots: string[]) => {
-    const day = dateObj.getDay();
-    if (isClosedDay(dateObj)) return [];
+  const day = dateObj.getDay();
+  if (isClosedDay(dateObj)) return [];
 
-    return allSlots.filter((slot) => {
-      const [hours, minutes] = slot.split(':').map(Number);
-      const totalMinutes = hours * 60 + minutes;
+  const now = new Date();
+  const isToday = 
+    dateObj.getDate() === now.getDate() &&
+    dateObj.getMonth() === now.getMonth() &&
+    dateObj.getFullYear() === now.getFullYear();
 
-      if (day === 6) {
-        // Sábado até 18:30 (1110 minutos)
-        return totalMinutes <= 1110;
-      }
-      // Terça a Sexta até 19:00 (1140 minutos)
-      return totalMinutes <= 1140;
-    });
-  };
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  return allSlots.filter((slot) => {
+    const [hours, minutes] = slot.split(':').map(Number);
+    const slotTotalMinutes = hours * 60 + minutes;
+
+    // 1. Se for HOJE, ignora horários que já passaram
+    if (isToday && slotTotalMinutes <= currentMinutes) {
+      return false;
+    }
+
+    // 2. Limites normais da barbearia
+    if (day === 6) {
+      // Sábado até 18:30 (1110 minutos)
+      return slotTotalMinutes <= 1110;
+    }
+    // Terça a Sexta até 19:00 (1140 minutos)
+    return slotTotalMinutes <= 1140;
+  });
+};
 
   // Data formatada para YYYY-MM-DD
   const getSelectedDateString = (index: number) => {

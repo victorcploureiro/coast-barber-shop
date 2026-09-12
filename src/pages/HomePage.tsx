@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, User
+  Flame, Palette, Eye, Crown, Calendar
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { services, barbers as defaultBarbers, heroImage, shopInterior, beardGrooming } from '@/data';
@@ -71,17 +71,24 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     // 2. Carregar nome do usuário logado e o próximo agendamento ativo
     async function fetchUserDataAndAppointment() {
       try {
-        // Nome do perfil
+        // Busca primeiro o nome da tabela profiles
         const { data: profile } = await supabase
           .from('profiles')
           .select('name')
           .eq('id', user.id)
           .single();
 
-        if (profile?.name) {
-          setUserName(profile.name.split(' ')[0]);
-        } else {
-          setUserName(user.email?.split('@')[0] || '');
+        // Fallbacks ordenados: profiles.name -> user_metadata.full_name -> user_metadata.name -> e-mail
+        const rawName = 
+          profile?.name || 
+          user.user_metadata?.full_name || 
+          user.user_metadata?.name || 
+          user.email?.split('@')[0] || '';
+
+        // Extrai apenas o primeiro nome e formata a primeira letra maiúscula
+        const firstName = rawName.trim().split(' ')[0];
+        if (firstName) {
+          setUserName(firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase());
         }
 
         // Buscar próximo agendamento ativo
