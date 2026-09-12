@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { 
   Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar
+  Flame, Palette, Eye, Crown, Calendar, Loader2
 } from 'lucide-react';
 import Header from '@/components/Header';
-import { services, barbers as defaultBarbers, heroImage, shopInterior, beardGrooming } from '@/data';
+import { heroImage, shopInterior, beardGrooming } from '@/data';
 import { BRAND_CONFIG } from '@/config/brand';
-import type { TabKey, Barber } from '@/types';
+import type { TabKey, Barber, Service } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 
@@ -27,40 +27,54 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const { user } = useAuth();
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
+  const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
 
+  // 1. Carregar barbeiros e serviços do Supabase
   useEffect(() => {
-    // 1. Carregar barbeiros do Supabase
-    async function fetchBarbers() {
+    async function fetchHomeData() {
       try {
-        const { data, error } = await supabase
+        // Buscar barbeiros da tabela profiles (role = 'barbeiro' ou todos os perfis)
+        const { data: barbersData } = await supabase
           .from('profiles')
           .select('*')
           .order('name');
 
-        if (!error && data && data.length > 0) {
-          const mapped: Barber[] = data.map((b) => ({
+        if (barbersData && barbersData.length > 0) {
+          const mappedBarbers: Barber[] = barbersData.map((b) => ({
             id: b.id,
             name: b.name || 'Barbeiro',
             role: 'Barbeiro',
             image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-            rating: 5.0,
-            reviews: 12,
+            rating: b.rating || 5.0,
+            reviews: b.reviews || 12,
             bio: '',
             specialties: []
           }));
-          setDbBarbers(mapped);
-        } else {
-          setDbBarbers(defaultBarbers);
+          setDbBarbers(mappedBarbers);
         }
-      } catch {
-        setDbBarbers(defaultBarbers);
+
+        // Buscar serviços da tabela services
+        const { data: servicesData } = await supabase
+          .from('services')
+          .select('*')
+          .order('price', { ascending: true });
+
+        if (servicesData) {
+          setDbServices(servicesData);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar dados na Home:', err);
+      } finally {
+        setLoading(false);
       }
     }
 
-    fetchBarbers();
+    fetchHomeData();
   }, []);
 
+  // 2. Carregar dados do usuário e próximo agendamento ativo
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -70,7 +84,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
 
     async function fetchUserDataAndAppointment() {
       try {
-        // Nome do perfil
         const { data: profile } = await supabase
           .from('profiles')
           .select('name')
@@ -88,14 +101,13 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           setUserName(firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase());
         }
 
-        // CORREÇÃO: Data local exata YYYY-MM-DD para bater com a gravação do banco
+        // Data local YYYY-MM-DD para busca exata
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const day = String(now.getDate()).padStart(2, '0');
         const localTodayStr = `${year}-${month}-${day}`;
 
-        // Buscar próximo agendamento ativo
         const { data: apts, error } = await supabase
           .from('appointments')
           .select('*, service:services(name), barber:profiles!appointments_barber_id_fkey(name)')
@@ -112,20 +124,18 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           setNextAppointment(null);
         }
       } catch (err) {
-        console.error('Erro ao buscar dados na Home:', err);
+        console.error('Erro ao buscar agendamento do usuário:', err);
       }
     }
 
     fetchUserDataAndAppointment();
   }, [user]);
 
-  const activeBarbersList = dbBarbers.length > 0 ? dbBarbers : defaultBarbers;
-
   return (
     <div className="min-h-screen pb-24">
       <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
 
-      {/* Card do Próximo Agendamento ou Banner */}
+      {/* Card do Próximo Agendamento ou Banner Hero */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
@@ -198,7 +208,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         ))}
       </section>
 
-      {/* Services */}
+      {/* Serviços do Supabase */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
@@ -206,37 +216,45 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             Ver todos <ChevronRight size={14} />
           </button>
         </div>
-        <div className="space-y-2.5">
-          {services.slice(0, 4).map((service) => {
-            const Icon = iconMap[service.icon] ?? Scissors;
-            return (
-              <div 
-                key={service.id} 
-                onClick={() => onNavigate('book')}
-                className="card card-hover p-4 flex items-center gap-4 cursor-pointer"
-              >
-                <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-                  <Icon size={22} className="text-gold-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-semibold text-ink-100">{service.name}</h4>
-                  <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-ink-200 flex items-center gap-1">
-                      <Clock size={11} /> {service.duration} min
-                    </span>
+
+        {loading ? (
+          <div className="py-8 flex items-center justify-center gap-2 text-ink-300">
+            <Loader2 size={18} className="animate-spin text-gold-400" />
+            <span className="text-xs">Carregando serviços...</span>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {dbServices.slice(0, 4).map((service) => {
+              const Icon = iconMap[service.icon] ?? Scissors;
+              return (
+                <div 
+                  key={service.id} 
+                  onClick={() => onNavigate('book')}
+                  className="card card-hover p-4 flex items-center gap-4 cursor-pointer"
+                >
+                  <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
+                    <Icon size={22} className="text-gold-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-ink-100">{service.name}</h4>
+                    <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-ink-200 flex items-center gap-1">
+                        <Clock size={11} /> {service.duration} min
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-display text-xl gold-text tracking-wide">R${service.price}</p>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="font-display text-xl gold-text tracking-wide">R${service.price}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
-      {/* Barbers */}
+      {/* Equipe de Barbeiros do Supabase */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
@@ -244,8 +262,9 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             Escolher <ChevronRight size={14} />
           </button>
         </div>
+
         <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
-          {activeBarbersList.map((barber) => (
+          {dbBarbers.map((barber) => (
             <div 
               key={barber.id} 
               onClick={() => onNavigate('book')}
@@ -268,7 +287,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Gallery */}
+      {/* Galeria */}
       <section className="px-5 mt-6">
         <h3 className="text-lg font-bold text-ink-100 mb-3">Galeria</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -281,7 +300,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* CTA */}
+      {/* CTA Clube */}
       <section className="px-5 mt-6">
         <div className="relative rounded-2xl overflow-hidden p-5 bg-gradient-to-br from-ink-800 to-ink-850 border border-gold-500/20">
           <div className="flex items-center gap-3 mb-2">
