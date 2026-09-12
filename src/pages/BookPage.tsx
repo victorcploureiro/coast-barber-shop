@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Check, ChevronLeft, ChevronRight, Scissors, Sparkles, 
   Flame, Palette, Eye, Crown, Calendar, Loader2, Plus, XCircle, AlertCircle,
-  User, Clock
+  User, Clock, LogIn
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { timeSlots } from '@/data';
@@ -24,6 +25,8 @@ type PathMode = 'barber' | 'datetime';
 
 export default function BookPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [step, setStep] = useState<Step>('list');
   const [pathMode, setPathMode] = useState<PathMode>('barber');
   const [userAppointments, setUserAppointments] = useState<any[]>([]);
@@ -54,7 +57,16 @@ export default function BookPage() {
   const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  // Define a sequência de passos baseada no caminho escolhido após o serviço
+  // Função para tratar o início do agendamento exigindo login
+  const handleStartBooking = () => {
+    if (!user) {
+      // Redireciona para a rota de login/perfil caso não esteja autenticado
+      navigate('/profile'); 
+      return;
+    }
+    setStep('service');
+  };
+
   const getStepOrder = (): Step[] => {
     if (pathMode === 'barber') {
       return ['service', 'choose_path', 'barber', 'datetime', 'confirm'];
@@ -219,13 +231,18 @@ export default function BookPage() {
   };
 
   const handleConfirm = async () => {
+    if (!user) {
+      setBookingError('Você precisa estar logado para agendar.');
+      navigate('/profile');
+      return;
+    }
+
     if (!selectedService || !selectedBarber || !selectedTime) return;
     setIsSubmitting(true);
     setBookingError(null);
     const formattedDate = getSelectedDateString(selectedDateIndex);
 
     try {
-      // 1. Validação de conflito de horário
       const { data: existingApt } = await supabase
         .from('appointments')
         .select('id')
@@ -236,15 +253,14 @@ export default function BookPage() {
         .maybeSingle();
 
       if (existingApt) {
-        setBookingError('Este horário acabou de ser reservado por outro cliente. Por favor, escolha outro horário.');
+        setBookingError('Este horário acabou de ser reservado por outro cliente. Escolha outro horário.');
         setStep('datetime');
         setIsSubmitting(false);
         return;
       }
 
-      // 2. Inserção no Supabase (Trata client_id nulo para convidados caso permitido)
       const { error } = await supabase.from('appointments').insert({
-        client_id: user?.id || null,
+        client_id: user.id,
         barber_id: selectedBarber.id,
         service_id: selectedService.id,
         date: formattedDate,
@@ -253,12 +269,7 @@ export default function BookPage() {
         status: 'scheduled',
       });
 
-      if (error) {
-        if (error.code === '23503' && error.message.includes('appointment_client_id_fkey')) {
-          throw new Error('Você precisa estar logado para agendar, ou execute a SQL de liberação no banco de dados.');
-        }
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
       setConfirmed(true);
       await fetchUserAppointments();
@@ -311,11 +322,31 @@ export default function BookPage() {
         <Header title="Agendamentos" />
         <div className="px-5 mt-4 space-y-6">
           <button
-            onClick={() => setStep('service')}
+            onClick={handleStartBooking}
             className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20 active:scale-95 transition-transform"
           >
             <Plus size={18} strokeWidth={2.5} /> Novo Agendamento
           </button>
+
+          {!user && (
+            <div className="card p-4 border border-gold-500/20 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gold-500/10 flex items-center justify-center shrink-0">
+                  <LogIn size={20} className="text-gold-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-ink-100">Você não está logado</p>
+                  <p className="text-[11px] text-ink-400">Faça login para ver e realizar agendamentos</p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/profile')}
+                className="px-3 py-1.5 rounded-lg bg-ink-800 border border-white/10 text-xs font-medium text-gold-400 hover:text-gold-300 transition-colors shrink-0"
+              >
+                Entrar
+              </button>
+            </div>
+          )}
 
           <section>
             <h3 className="text-sm font-bold text-ink-100 mb-3">Próximos Agendamentos</h3>
