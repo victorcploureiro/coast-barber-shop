@@ -53,5 +53,48 @@ export function useAuth() {
 
   const hasPermission = (code: string) => permissions.includes(code);
 
-  return { user, role, permissions, hasPermission, loading };
+  const signInWithGoogle = async () => {
+    return await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+  };
+
+  const signInWithEmail = async (email: string, pass: string) => {
+    return await supabase.auth.signInWithPassword({
+      email,
+      password: pass,
+    });
+  };
+
+  const signUpWithEmail = async (email: string, pass: string, name: string, phone: string) => {
+    return await supabase.auth.signUp({
+      email,
+      password: pass,
+      options: {
+        data: {
+          full_name: name,
+          phone: phone,
+        },
+      },
+    });
+  };
+
+  const signOut = async () => {
+    return await supabase.auth.signOut();
+  };
+
+  return { 
+    user, 
+    role, 
+    permissions, 
+    hasPermission, 
+    loading,
+    signInWithGoogle,
+    signInWithEmail,
+    signUpWithEmail,
+    signOut
+  };
 }
