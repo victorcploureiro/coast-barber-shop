@@ -30,7 +30,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [userName, setUserName] = useState<string>('');
 
   useEffect(() => {
-    // 1. Carregar barbeiros cadastrados no Supabase
+    // 1. Carregar barbeiros do Supabase
     async function fetchBarbers() {
       try {
         const { data, error } = await supabase
@@ -68,37 +68,40 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       return;
     }
 
-    // 2. Carregar nome do usuário logado e o próximo agendamento ativo
     async function fetchUserDataAndAppointment() {
       try {
-        // Busca primeiro o nome da tabela profiles
+        // Nome do perfil
         const { data: profile } = await supabase
           .from('profiles')
           .select('name')
           .eq('id', user.id)
           .single();
 
-        // Fallbacks ordenados: profiles.name -> user_metadata.full_name -> user_metadata.name -> e-mail
         const rawName = 
           profile?.name || 
           user.user_metadata?.full_name || 
           user.user_metadata?.name || 
           user.email?.split('@')[0] || '';
 
-        // Extrai apenas o primeiro nome e formata a primeira letra maiúscula
         const firstName = rawName.trim().split(' ')[0];
         if (firstName) {
           setUserName(firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase());
         }
 
+        // CORREÇÃO: Data local exata YYYY-MM-DD para bater com a gravação do banco
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const localTodayStr = `${year}-${month}-${day}`;
+
         // Buscar próximo agendamento ativo
-        const todayStr = new Date().toISOString().split('T')[0];
         const { data: apts, error } = await supabase
           .from('appointments')
           .select('*, service:services(name), barber:profiles!appointments_barber_id_fkey(name)')
           .eq('client_id', user.id)
           .eq('status', 'scheduled')
-          .gte('date', todayStr)
+          .gte('date', localTodayStr)
           .order('date', { ascending: true })
           .order('time_slot', { ascending: true })
           .limit(1);
@@ -122,7 +125,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     <div className="min-h-screen pb-24">
       <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
 
-      {/* Se houver agendamento confirmado, mostra Card em destaque; se não, mostra o Banner Hero */}
+      {/* Card do Próximo Agendamento ou Banner */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
@@ -151,10 +154,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             </div>
 
             <button
-              onClick={() => onNavigate('profile')}
+              onClick={() => onNavigate('book')}
               className="mt-3 w-full py-2.5 rounded-xl bg-ink-800/80 border border-white/10 text-xs font-semibold text-ink-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
             >
-              Ver detalhes no perfil <ChevronRight size={14} />
+              Ver meus agendamentos <ChevronRight size={14} />
             </button>
           </div>
         </section>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import BottomNav from '@/components/BottomNav';
 import HomePage from '@/pages/HomePage';
 import BookPage from '@/pages/BookPage';
+import AppointmentsPage from '@/pages/AppointmentsPage';
 import ClubPage from '@/pages/ClubPage';
 import ShopPage from '@/pages/ShopPage';
 import ProfilePage from '@/pages/ProfilePage';
@@ -16,6 +17,8 @@ export default function App() {
         return <HomePage onNavigate={setActiveTab} />;
       case 'book':
         return <BookPage />;
+      case 'appointments':
+        return <AppointmentsPage />;
       case 'club':
         return <ClubPage />;
       case 'shop':

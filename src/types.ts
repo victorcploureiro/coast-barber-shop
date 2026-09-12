@@ -1,4 +1,4 @@
-export type TabKey = 'home' | 'book' | 'club' | 'shop' | 'profile';
+export type TabKey = 'home' | 'book' | 'appointments' | 'club' | 'shop' | 'profile';
 
 export interface Service {
   id: string;
