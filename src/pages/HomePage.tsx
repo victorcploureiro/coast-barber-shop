@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
-  Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, Loader2
+  Star, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
+  Flame, Palette, Eye, Crown, Calendar, Loader2, Bell
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { heroImage, shopInterior, beardGrooming } from '@/data';
@@ -19,6 +19,14 @@ const iconMap: Record<string, typeof Scissors> = {
   crown: Crown,
 };
 
+const categoryLabels: Record<string, string> = {
+  cabelo: 'Cabelo & Estilo',
+  barba: 'Barba & Ritual',
+  combo: 'Combos Exclusivos',
+  quimica: 'Tratamentos Químicos',
+  cuidados: 'Cuidados & Waxing',
+};
+
 interface HomePageProps {
   onNavigate: (tab: TabKey) => void;
 }
@@ -28,17 +36,23 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
   const [dbServices, setDbServices] = useState<Service[]>([]);
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({ cabelo: true, barba: true });
   const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 1. Carregar barbeiros e serviços do Supabase
+  // Toggle dropdown de categorias de serviços
+  const toggleCategory = (cat: string) => {
+    setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  };
+
   useEffect(() => {
     async function fetchHomeData() {
       try {
-        // Buscar barbeiros da tabela profiles (role = 'barbeiro' ou todos os perfis)
+        // 1. Filtrar estritamente apenas os perfis com role 'barbeiro'
         const { data: barbersData } = await supabase
           .from('profiles')
           .select('*')
+          .ilike('role', 'barbeiro')
           .order('name');
 
         if (barbersData && barbersData.length > 0) {
@@ -55,15 +69,13 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           setDbBarbers(mappedBarbers);
         }
 
-        // Buscar serviços da tabela services
+        // 2. Buscar todos os serviços da tabela
         const { data: servicesData } = await supabase
           .from('services')
           .select('*')
           .order('price', { ascending: true });
 
-        if (servicesData) {
-          setDbServices(servicesData);
-        }
+        if (servicesData) setDbServices(servicesData);
       } catch (err) {
         console.error('Erro ao buscar dados na Home:', err);
       } finally {
@@ -74,7 +86,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchHomeData();
   }, []);
 
-  // 2. Carregar dados do usuário e próximo agendamento ativo
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -90,23 +101,14 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           .eq('id', user.id)
           .single();
 
-        const rawName = 
-          profile?.name || 
-          user.user_metadata?.full_name || 
-          user.user_metadata?.name || 
-          user.email?.split('@')[0] || '';
-
+        const rawName = profile?.name || user.user_metadata?.full_name || user.email?.split('@')[0] || '';
         const firstName = rawName.trim().split(' ')[0];
         if (firstName) {
           setUserName(firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase());
         }
 
-        // Data local YYYY-MM-DD para busca exata
         const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const localTodayStr = `${year}-${month}-${day}`;
+        const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
         const { data: apts, error } = await supabase
           .from('appointments')
@@ -124,24 +126,37 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           setNextAppointment(null);
         }
       } catch (err) {
-        console.error('Erro ao buscar agendamento do usuário:', err);
+        console.error('Erro ao buscar agendamento:', err);
       }
     }
 
     fetchUserDataAndAppointment();
   }, [user]);
 
+  // Agrupar serviços por categoria
+  const groupedServices = dbServices.reduce((acc, service) => {
+    const cat = service.category || 'outros';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(service);
+    return acc;
+  }, {} as Record<string, Service[]>);
+
   return (
     <div className="min-h-screen pb-24">
-      <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
+      <Header 
+        title={userName ? `Olá, ${userName}` : "Bem-vindo"} 
+        showLocation 
+        actionIcon={Bell}
+        onActionClick={() => onNavigate('book')}
+      />
 
-      {/* Card do Próximo Agendamento ou Banner Hero */}
+      {/* Alternância: Se houver agendamento mostra o Card do Agendamento, senão o Banner Inicial */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-full gold-gradient text-ink-950">
-                Próximo Agendamento
+                Seu Agendamento
               </span>
               <span className="text-xs text-ink-300 flex items-center gap-1">
                 <Calendar size={13} className="text-gold-400" />
@@ -187,19 +202,18 @@ export default function HomePage({ onNavigate }: HomePageProps) {
               onClick={() => onNavigate('book')}
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl gold-gradient text-ink-950 text-sm font-semibold active:scale-95 transition-transform"
             >
-              Agendar agora
-              <ChevronRight size={16} />
+              Agendar agora <ChevronRight size={16} />
             </button>
           </div>
         </section>
       )}
 
-      {/* Stats */}
+      {/* Métricas e Avaliação do Google */}
       <section className="grid grid-cols-3 gap-3 px-5 mt-4">
         {[
           { label: 'Anos de história', value: '12+' },
           { label: 'Clientes/mês', value: '800+' },
-          { label: 'Avaliação', value: '4.9' },
+          { label: 'Google Rating', value: '4.9 ★' },
         ].map((stat) => (
           <div key={stat.label} className="card p-3 text-center">
             <p className="font-display text-2xl gold-text tracking-wide">{stat.value}</p>
@@ -208,12 +222,12 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         ))}
       </section>
 
-      {/* Serviços do Supabase */}
+      {/* Serviços Categorizados com Dropdown Accordion */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
           <button onClick={() => onNavigate('book')} className="text-xs text-gold-400 font-medium flex items-center gap-1">
-            Ver todos <ChevronRight size={14} />
+            Agendar <ChevronRight size={14} />
           </button>
         </div>
 
@@ -223,30 +237,49 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             <span className="text-xs">Carregando serviços...</span>
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {dbServices.slice(0, 4).map((service) => {
-              const Icon = iconMap[service.icon] ?? Scissors;
+          <div className="space-y-3">
+            {Object.keys(groupedServices).map((catKey) => {
+              const isOpen = !!openCategories[catKey];
+              const categoryServices = groupedServices[catKey];
+
               return (
-                <div 
-                  key={service.id} 
-                  onClick={() => onNavigate('book')}
-                  className="card card-hover p-4 flex items-center gap-4 cursor-pointer"
-                >
-                  <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-                    <Icon size={22} className="text-gold-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-ink-100">{service.name}</h4>
-                    <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description}</p>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-ink-200 flex items-center gap-1">
-                        <Clock size={11} /> {service.duration} min
-                      </span>
+                <div key={catKey} className="card overflow-hidden">
+                  <button
+                    onClick={() => toggleCategory(catKey)}
+                    className="w-full p-3.5 flex items-center justify-between bg-ink-850 hover:bg-ink-800 transition-colors"
+                  >
+                    <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
+                      {categoryLabels[catKey] || catKey} ({categoryServices.length})
+                    </span>
+                    <ChevronDown size={16} className={`text-ink-300 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isOpen && (
+                    <div className="p-2 space-y-2 border-t border-white/5">
+                      {categoryServices.map((service) => {
+                        const Icon = iconMap[service.icon] ?? Scissors;
+                        return (
+                          <div 
+                            key={service.id} 
+                            onClick={() => onNavigate('book')}
+                            className="p-3 rounded-xl bg-ink-900/60 hover:bg-ink-800/80 flex items-center gap-3.5 cursor-pointer transition-colors"
+                          >
+                            <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
+                              <Icon size={18} className="text-gold-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-xs font-semibold text-ink-100">{service.name}</h4>
+                              <p className="text-[11px] text-ink-300 line-clamp-1">{service.description}</p>
+                              <span className="text-[10px] text-ink-400 flex items-center gap-1 mt-0.5">
+                                <Clock size={10} /> {service.duration} min
+                              </span>
+                            </div>
+                            <span className="font-display text-base gold-text shrink-0">R${service.price}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-display text-xl gold-text tracking-wide">R${service.price}</p>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -254,7 +287,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         )}
       </section>
 
-      {/* Equipe de Barbeiros do Supabase */}
+      {/* Nossa Equipe (Exclusivamente Barbeiros Reais) */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
@@ -268,18 +301,18 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             <div 
               key={barber.id} 
               onClick={() => onNavigate('book')}
-              className="card card-hover shrink-0 w-40 overflow-hidden cursor-pointer"
+              className="card card-hover shrink-0 w-36 overflow-hidden cursor-pointer"
             >
-              <div className="h-44 overflow-hidden">
+              <div className="h-40 overflow-hidden">
                 <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
               </div>
-              <div className="p-3">
-                <h4 className="text-sm font-semibold text-ink-100 truncate">{barber.name}</h4>
-                <p className="text-[11px] text-gold-400 mb-1">{barber.role}</p>
+              <div className="p-2.5">
+                <h4 className="text-xs font-bold text-ink-100 truncate">{barber.name}</h4>
+                <p className="text-[10px] text-gold-400 mb-1">{barber.role}</p>
                 <div className="flex items-center gap-1">
-                  <Star size={12} className="text-gold-400 fill-gold-400" />
-                  <span className="text-[11px] text-ink-200 font-medium">{barber.rating}</span>
-                  <span className="text-[11px] text-ink-400">({barber.reviews})</span>
+                  <Star size={11} className="text-gold-400 fill-gold-400" />
+                  <span className="text-[10px] text-ink-200 font-semibold">{barber.rating}</span>
+                  <span className="text-[10px] text-ink-400">({barber.reviews})</span>
                 </div>
               </div>
             </div>
@@ -300,7 +333,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* CTA Clube */}
+      {/* CTA Clube Coast */}
       <section className="px-5 mt-6">
         <div className="relative rounded-2xl overflow-hidden p-5 bg-gradient-to-br from-ink-800 to-ink-850 border border-gold-500/20">
           <div className="flex items-center gap-3 mb-2">

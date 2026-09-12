@@ -15,7 +15,7 @@ const iconMap: Record<string, typeof Scissors> = {
   flame: Flame,
   palette: Palette,
   eye: Eye,
-  crown: Crown,
+  
 };
 
 type Step = 'list' | 'service' | 'barber' | 'datetime' | 'confirm';

@@ -1,4 +1,4 @@
-import { Bell, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { BRAND_CONFIG } from '../config/brand';
 
 interface HeaderProps {
@@ -34,10 +34,6 @@ export default function Header({ title, subtitle, showLocation }: HeaderProps) {
             )}
           </div>
         </div>
-        <button className="relative h-10 w-10 rounded-xl bg-ink-800/80 border border-white/5 flex items-center justify-center active:scale-95 transition-transform">
-          <Bell size={18} className="text-ink-200" />
-          <span className="absolute top-2 right-2.5 h-2 w-2 rounded-full bg-gold-400 ring-2 ring-ink-900" />
-        </button>
       </div>
       {title && (
         <div className="px-5 pb-4">
