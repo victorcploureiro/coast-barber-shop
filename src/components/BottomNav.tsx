@@ -1,4 +1,4 @@
-import { Home, CalendarDays, Clock, Crown, User } from 'lucide-react';
+import { Home, CalendarDays, ShoppingBag, Crown, User } from 'lucide-react';
 import type { TabKey } from '@/types';
 
 interface BottomNavProps {
@@ -9,7 +9,7 @@ interface BottomNavProps {
 const tabs: { key: TabKey; label: string; icon: typeof Home }[] = [
   { key: 'home', label: 'Início', icon: Home },
   { key: 'book', label: 'Agendamentos', icon: CalendarDays },
-  { key: 'appointments', label: 'Agenda', icon: Clock },
+  { key: 'shop', label: 'Produtos', icon: ShoppingBag },
   { key: 'club', label: 'Clube', icon: Crown },
   { key: 'profile', label: 'Perfil', icon: User },
 ];
