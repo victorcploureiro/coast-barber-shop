@@ -69,5 +69,3 @@ Para rodar o projeto localmente ou em ambientes de produção, configure as segu
 VITE_SUPABASE_URL=[https://seu-projeto.supabase.co](https://seu-projeto.supabase.co)
 VITE_SUPABASE_ANON_KEY=sua-chave-anon-publica
 ```
-
-[![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-r2bhjusz)
