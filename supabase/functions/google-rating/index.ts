@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,18 +6,24 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Trata requisição OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
     const apiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    const placeId = Deno.env.get('GOOGLE_PLACE_ID') || 'ChIJpWcdyWxbzpQRww8Hex4c8GU';
+    const placeId = Deno.env.get('GOOGLE_PLACE_ID'); // Ou coloque o Place ID diretamente aqui
+
+    console.log('--- INICIANDO CHAMADA GOOGLE PLACES ---');
+    console.log('API Key existe?:', !!apiKey);
+    console.log('Place ID existe?:', !!placeId);
 
     if (!apiKey) {
-      throw new Error('Chave GOOGLE_PLACES_API_KEY nao configurada.');
+      throw new Error('A variável GOOGLE_PLACES_API_KEY não está configurada nos Secrets do Supabase.');
     }
 
+    // Exemplo de chamada para Places API (New)
     const response = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
       method: 'GET',
       headers: {
@@ -29,27 +35,25 @@ serve(async (req) => {
 
     const data = await response.json();
 
-    return new Response(
-      JSON.stringify({
-        rating: data.rating || 99,
-        userRatingCount: data.userRatingCount || 0,
-      }),
-      {
+    if (!response.ok) {
+      console.error('ERRO RETORNADO PELO GOOGLE:', JSON.stringify(data));
+      return new Response(JSON.stringify({ error: data }), {
+        status: response.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
+      });
+    }
+
+    console.log('RESPOSTA SUCESSO DO GOOGLE:', data);
+
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
   } catch (err: any) {
-    return new Response(
-      JSON.stringify({
-        rating: 5.0,
-        userRatingCount: 250,
-        error: err.message,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
+    console.error('EXCEÇÃO NA EDGE FUNCTION:', err.message);
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
