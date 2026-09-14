@@ -209,10 +209,9 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       )}
 
       {/* Métricas e Avaliação do Google */}
-      <section className="grid grid-cols-3 gap-3 px-5 mt-4">
+      <section className="grid grid-cols-2 gap-3 px-5 mt-4">
         {[
           { label: 'Anos de história', value: '12+' },
-          { label: 'Clientes/mês', value: '800+' },
           { label: 'Google Rating', value: '4.9 ★' },
         ].map((stat) => (
           <div key={stat.label} className="card p-3 text-center">
