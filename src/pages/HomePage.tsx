@@ -73,7 +73,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         }
       } catch (err) {
         console.error('Erro ao buscar avaliação do Google:', err);
-      } fontally {
+      } finally {
         setLoadingRating(false);
       }
     }
