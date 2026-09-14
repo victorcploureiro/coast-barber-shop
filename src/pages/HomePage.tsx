@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
 import { 
   Star, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, Loader2, Bell
+  Flame, Palette, Eye, Crown, Calendar, Loader2, Bell, Heart
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { heroImage, shopInterior, beardGrooming } from '@/data';
 import { BRAND_CONFIG } from '@/config/brand';
-import type { TabKey, Barber, Service } from '@/types';
+import type { TabKey, Service } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+
+// Interface atualizada para incluir a estrutura de curtidas
+interface Barber {
+  id: string;
+  name: string;
+  role: string;
+  image: string;
+  likes_count: number;
+  user_has_liked?: boolean;
+  bio?: string;
+  specialties?: string[];
+}
 
 const iconMap: Record<string, typeof Scissors> = {
   scissors: Scissors,
@@ -67,7 +79,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           if (typeof data.rating === 'number') {
             setGoogleRating(data.rating);
           }
-          if (data.userRatingCount) {
+          if (typeof data.userRatingCount === 'number') {
             setReviewCount(data.userRatingCount);
           }
         }
@@ -81,30 +93,45 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchRating();
   }, []);
 
-  // Busca barbeiros e serviços
+  // Busca barbeiros, curtidas (likes) e serviços
   useEffect(() => {
     async function fetchHomeData() {
       try {
-        const { data: barbersData } = await supabase
+        // 1. Busca perfis de barbeiros
+        const { data: barbersData, error: barbersError } = await supabase
           .from('profiles')
           .select('*')
           .ilike('role', 'barbeiro')
           .order('name');
 
+        if (barbersError) throw barbersError;
+
+        // 2. Busca registros de curtidas na tabela barber_reviews (liked = true)
+        const { data: reviewsData } = await supabase
+          .from('barber_reviews')
+          .select('barber_id, client_id, liked')
+          .eq('liked', true);
+
         if (barbersData && barbersData.length > 0) {
-          const mappedBarbers: Barber[] = barbersData.map((b) => ({
-            id: b.id,
-            name: b.name || 'Barbeiro',
-            role: 'Barbeiro',
-            image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-            rating: b.rating || 5.0,
-            reviews: b.reviews || 12,
-            bio: '',
-            specialties: []
-          }));
+          const mappedBarbers: Barber[] = barbersData.map((b) => {
+            const barberLikes = reviewsData?.filter((r) => r.barber_id === b.id) || [];
+            const userHasLiked = user ? barberLikes.some((r) => r.client_id === user.id) : false;
+
+            return {
+              id: b.id,
+              name: b.name || 'Barbeiro',
+              role: 'Barbeiro',
+              image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+              likes_count: barberLikes.length,
+              user_has_liked: userHasLiked,
+              bio: '',
+              specialties: []
+            };
+          });
           setDbBarbers(mappedBarbers);
         }
 
+        // 3. Busca lista de serviços
         const { data: servicesData } = await supabase
           .from('services')
           .select('*')
@@ -119,7 +146,90 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     }
 
     fetchHomeData();
-  }, []);
+  }, [user]);
+
+  // Função para dar/remover Curtida (Like) no Barbeiro
+  const handleLikeBarber = async (e: React.MouseEvent, barberId: string) => {
+    e.stopPropagation(); // Evita navegar para a tela de agendamento ao clicar no botão de like
+
+    if (!user) {
+      alert('Você precisa estar logado para curtir um barbeiro!');
+      return;
+    }
+
+    // Atualização otimista na UI (resposta instantânea)
+    setDbBarbers((prev) =>
+      prev.map((b) => {
+        if (b.id === barberId) {
+          const newLikedState = !b.user_has_liked;
+          return {
+            ...b,
+            user_has_liked: newLikedState,
+            likes_count: newLikedState ? b.likes_count + 1 : b.likes_count - 1,
+          };
+        }
+        return b;
+      })
+    );
+
+    const targetBarber = dbBarbers.find((b) => b.id === barberId);
+    const currentlyLiked = targetBarber?.user_has_liked;
+
+    try {
+      if (currentlyLiked) {
+        // Descurtir: Atualiza a coluna liked para false
+        const { error } = await supabase
+          .from('barber_reviews')
+          .update({ liked: false })
+          .eq('client_id', user.id)
+          .eq('barber_id', barberId);
+
+        if (error) throw error;
+      } else {
+        // Verifica se já existe algum registro desse cliente para este barbeiro
+        const { data: existingReview } = await supabase
+          .from('barber_reviews')
+          .select('id')
+          .eq('client_id', user.id)
+          .eq('barber_id', barberId)
+          .maybeSingle();
+
+        if (existingReview) {
+          // Se já existia um registro antigo, atualiza 'liked' para true
+          const { error } = await supabase
+            .from('barber_reviews')
+            .update({ liked: true })
+            .eq('id', existingReview.id);
+
+          if (error) throw error;
+        } else {
+          // Cria um novo registro de curtida
+          const { error } = await supabase.from('barber_reviews').insert({
+            client_id: user.id,
+            barber_id: barberId,
+            liked: true,
+          });
+
+          if (error) throw error;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar curtida no Supabase:', err);
+      // Reverte em caso de falha no servidor
+      setDbBarbers((prev) =>
+        prev.map((b) => {
+          if (b.id === barberId) {
+            return {
+              ...b,
+              user_has_liked: currentlyLiked,
+              likes_count: currentlyLiked ? b.likes_count : b.likes_count - 1,
+            };
+          }
+          return b;
+        })
+      );
+    }
+  };
 
   // Busca dados do usuário e agendamento
   useEffect(() => {
@@ -343,7 +453,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         )}
       </section>
 
-      {/* Nossa Equipe */}
+      {/* Nossa Equipe com Contador de Likes */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
@@ -357,19 +467,36 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             <div 
               key={barber.id} 
               onClick={() => onNavigate('book')}
-              className="card card-hover shrink-0 w-36 overflow-hidden cursor-pointer"
+              className="card card-hover shrink-0 w-36 overflow-hidden cursor-pointer flex flex-col justify-between"
             >
-              <div className="h-40 overflow-hidden">
-                <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
-              </div>
-              <div className="p-2.5">
-                <h4 className="text-xs font-bold text-ink-100 truncate">{barber.name}</h4>
-                <p className="text-[10px] text-gold-400 mb-1">{barber.role}</p>
-                <div className="flex items-center gap-1">
-                  <Star size={11} className="text-gold-400 fill-gold-400" />
-                  <span className="text-[10px] text-ink-200 font-semibold">{barber.rating}</span>
-                  <span className="text-[10px] text-ink-400">({barber.reviews})</span>
+              <div>
+                <div className="h-36 overflow-hidden relative">
+                  <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
                 </div>
+                <div className="p-2.5">
+                  <h4 className="text-xs font-bold text-ink-100 truncate">{barber.name}</h4>
+                  <p className="text-[10px] text-gold-400 mb-2">{barber.role}</p>
+                </div>
+              </div>
+
+              {/* Botão de Curtida do Barbeiro */}
+              <div className="px-2.5 pb-2.5">
+                <button
+                  onClick={(e) => handleLikeBarber(e, barber.id)}
+                  className={`w-full py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-all active:scale-95 ${
+                    barber.user_has_liked
+                      ? 'bg-red-500/10 border-red-500/50 text-red-400'
+                      : 'bg-ink-800/80 border-white/10 text-ink-300 hover:border-red-500/30'
+                  }`}
+                >
+                  <Heart
+                    size={13}
+                    className={`transition-colors ${
+                      barber.user_has_liked ? 'fill-red-500 text-red-500' : 'text-ink-400'
+                    }`}
+                  />
+                  <span>{barber.likes_count}</span>
+                </button>
               </div>
             </div>
           ))}
