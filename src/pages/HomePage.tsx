@@ -19,6 +19,9 @@ const iconMap: Record<string, typeof Scissors> = {
   crown: Crown,
 };
 
+// Ordem exata desejada das categorias
+const categoryOrder: string[] = ['cabelo', 'barba', 'combo', 'quimica', 'cuidados'];
+
 const categoryLabels: Record<string, string> = {
   cabelo: 'Cabelo & Estilo',
   barba: 'Barba & Ritual',
@@ -36,7 +39,8 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
   const [dbServices, setDbServices] = useState<Service[]>([]);
-  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({ cabelo: true, barba: true });
+  // Todos os dropdowns iniciam FECHADOS (objeto vazio)
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -69,7 +73,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         }
       } catch (err) {
         console.error('Erro ao buscar avaliação do Google:', err);
-      } finally {
+      } fontally {
         setLoadingRating(false);
       }
     }
@@ -172,6 +176,12 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     acc[cat].push(service);
     return acc;
   }, {} as Record<string, Service[]>);
+
+  // Ordena as chaves conforme a lista solicitada
+  const sortedCategories = [
+    ...categoryOrder.filter(cat => groupedServices[cat]),
+    ...Object.keys(groupedServices).filter(cat => !categoryOrder.includes(cat))
+  ];
 
   return (
     <div className="min-h-screen pb-24">
@@ -284,7 +294,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           </div>
         ) : (
           <div className="space-y-3">
-            {Object.keys(groupedServices).map((catKey) => {
+            {sortedCategories.map((catKey) => {
               const isOpen = !!openCategories[catKey];
               const categoryServices = groupedServices[catKey];
 
