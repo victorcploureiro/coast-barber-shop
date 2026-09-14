@@ -31,6 +31,11 @@ interface HomePageProps {
   onNavigate: (tab: TabKey) => void;
 }
 
+export default function HomePage() {
+  // Cálculo dinâmico dos anos de história
+  const currentYear = new Date().getFullYear();
+  const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
+
 export default function HomePage({ onNavigate }: HomePageProps) {
   const { user } = useAuth();
   const [nextAppointment, setNextAppointment] = useState<any>(null);
@@ -209,16 +214,25 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       )}
 
       {/* Métricas e Avaliação do Google */}
-      <section className="grid grid-cols-2 gap-3 px-5 mt-4">
-        {[
-          { label: 'Anos de história', value: '12+' },
-          { label: 'Google Rating', value: '4.9 ★' },
-        ].map((stat) => (
-          <div key={stat.label} className="card p-3 text-center">
-            <p className="font-display text-2xl gold-text tracking-wide">{stat.value}</p>
-            <p className="text-[10px] text-ink-300 mt-0.5">{stat.label}</p>
-          </div>
-        ))}
+     <section className="grid grid-cols-2 gap-3 px-5 mt-4">
+      {/* Card 1: Anos de História */}
+      <div className="card p-3 text-center flex flex-col items-center justify-center">
+        <p className="font-display text-2xl gold-text tracking-wide">
+          {yearsOfHistory}+
+        </p>
+        <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
+      </div>
+
+      {/* Card 2: Google Rating */}
+/*      <div className="card p-3 text-center flex flex-col items-center justify-center">
+        <p className="font-display text-2xl gold-text tracking-wide flex items-center justify-center gap-1">
+          {loading ? '...' : googleRating.toFixed(1)}
+          <Star className="w-4 h-4 fill-amber-400 text-amber-400 inline-block align-middle" />
+        </p>
+        <p className="text-[10px] text-ink-300 mt-0.5">
+          {reviewCount ? `${reviewCount} avaliações no Google` : 'Google Rating'}
+        </p>
+      </div> */
       </section>
 
       {/* Serviços Categorizados com Dropdown Accordion */}
