@@ -31,8 +31,8 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        rating: data.rating || 5.0,
-        userRatingCount: data.userRatingCount || 250,
+        rating: data.rating || 99,
+        userRatingCount: data.userRatingCount || 0,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
