@@ -44,8 +44,8 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const currentYear = new Date().getFullYear();
   const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
 
-  // Estados para avaliação do Google
-  const [googleRating, setGoogleRating] = useState<number>(BRAND_CONFIG.googleRating || 4.9);
+  // Estados para avaliação do Google (carregados 100% via API/Edge Function)
+  const [googleRating, setGoogleRating] = useState<number | null>(null);
   const [reviewCount, setReviewCount] = useState<number | null>(null);
   const [loadingRating, setLoadingRating] = useState<boolean>(true);
 
@@ -59,8 +59,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     async function fetchRating() {
       try {
         const { data, error } = await supabase.functions.invoke('google-rating');
-        if (!error && data?.rating) {
-          setGoogleRating(data.rating);
+        if (!error && data) {
+          if (typeof data.rating === 'number') {
+            setGoogleRating(data.rating);
+          }
           if (data.userRatingCount) {
             setReviewCount(data.userRatingCount);
           }
@@ -251,7 +253,13 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         {/* Card 2: Google Rating */}
         <div className="card p-3 text-center flex flex-col items-center justify-center">
           <p className="font-display text-2xl gold-text tracking-wide flex items-center justify-center gap-1">
-            {loadingRating ? '...' : googleRating.toFixed(1)}
+            {loadingRating ? (
+              '...'
+            ) : googleRating !== null ? (
+              googleRating.toFixed(1)
+            ) : (
+              '5.0'
+            )}
             <Star className="w-4 h-4 fill-amber-400 text-amber-400 inline-block align-middle" />
           </p>
           <p className="text-[10px] text-ink-300 mt-0.5">
