@@ -31,11 +31,6 @@ interface HomePageProps {
   onNavigate: (tab: TabKey) => void;
 }
 
-export default function HomePage() {
-  // Cálculo dinâmico dos anos de história
-  const currentYear = new Date().getFullYear();
-  const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
-
 export default function HomePage({ onNavigate }: HomePageProps) {
   const { user } = useAuth();
   const [nextAppointment, setNextAppointment] = useState<any>(null);
@@ -45,15 +40,45 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Cálculo dinâmico dos anos de história
+  const currentYear = new Date().getFullYear();
+  const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
+
+  // Estados para avaliação do Google
+  const [googleRating, setGoogleRating] = useState<number>(BRAND_CONFIG.googleRating || 4.9);
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
+  const [loadingRating, setLoadingRating] = useState<boolean>(true);
+
   // Toggle dropdown de categorias de serviços
   const toggleCategory = (cat: string) => {
     setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
   };
 
+  // Busca dados do Google Places via Edge Function
+  useEffect(() => {
+    async function fetchRating() {
+      try {
+        const { data, error } = await supabase.functions.invoke('google-rating');
+        if (!error && data?.rating) {
+          setGoogleRating(data.rating);
+          if (data.userRatingCount) {
+            setReviewCount(data.userRatingCount);
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao buscar avaliação do Google:', err);
+      } finally {
+        setLoadingRating(false);
+      }
+    }
+
+    fetchRating();
+  }, []);
+
+  // Busca barbeiros e serviços
   useEffect(() => {
     async function fetchHomeData() {
       try {
-        // 1. Filtrar estritamente apenas os perfis com role 'barbeiro'
         const { data: barbersData } = await supabase
           .from('profiles')
           .select('*')
@@ -74,7 +99,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           setDbBarbers(mappedBarbers);
         }
 
-        // 2. Buscar todos os serviços da tabela
         const { data: servicesData } = await supabase
           .from('services')
           .select('*')
@@ -91,6 +115,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchHomeData();
   }, []);
 
+  // Busca dados do usuário e agendamento
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -214,25 +239,25 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       )}
 
       {/* Métricas e Avaliação do Google */}
-     <section className="grid grid-cols-2 gap-3 px-5 mt-4">
-      {/* Card 1: Anos de História */}
-      <div className="card p-3 text-center flex flex-col items-center justify-center">
-        <p className="font-display text-2xl gold-text tracking-wide">
-          {yearsOfHistory}+
-        </p>
-        <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
-      </div>
+      <section className="grid grid-cols-2 gap-3 px-5 mt-4">
+        {/* Card 1: Anos de História */}
+        <div className="card p-3 text-center flex flex-col items-center justify-center">
+          <p className="font-display text-2xl gold-text tracking-wide">
+            {yearsOfHistory}+
+          </p>
+          <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
+        </div>
 
-      {/* Card 2: Google Rating */}
-/*      <div className="card p-3 text-center flex flex-col items-center justify-center">
-        <p className="font-display text-2xl gold-text tracking-wide flex items-center justify-center gap-1">
-          {loading ? '...' : googleRating.toFixed(1)}
-          <Star className="w-4 h-4 fill-amber-400 text-amber-400 inline-block align-middle" />
-        </p>
-        <p className="text-[10px] text-ink-300 mt-0.5">
-          {reviewCount ? `${reviewCount} avaliações no Google` : 'Google Rating'}
-        </p>
-      </div> */
+        {/* Card 2: Google Rating */}
+        <div className="card p-3 text-center flex flex-col items-center justify-center">
+          <p className="font-display text-2xl gold-text tracking-wide flex items-center justify-center gap-1">
+            {loadingRating ? '...' : googleRating.toFixed(1)}
+            <Star className="w-4 h-4 fill-amber-400 text-amber-400 inline-block align-middle" />
+          </p>
+          <p className="text-[10px] text-ink-300 mt-0.5">
+            {reviewCount ? `${reviewCount} avaliações` : 'Google Rating'}
+          </p>
+        </div>
       </section>
 
       {/* Serviços Categorizados com Dropdown Accordion */}
@@ -300,7 +325,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         )}
       </section>
 
-      {/* Nossa Equipe (Exclusivamente Barbeiros Reais) */}
+      {/* Nossa Equipe */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
