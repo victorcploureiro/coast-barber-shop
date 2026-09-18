@@ -148,81 +148,60 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchHomeData();
   }, [user]);
 
-  // Função para dar/remover Curtida (Like) no Barbeiro
+  // Função otimizada para dar/remover Curtida (Like) no Barbeiro
   const handleLikeBarber = async (e: React.MouseEvent, barberId: string) => {
-    e.stopPropagation(); // Evita navegar para a tela de agendamento ao clicar no botão de like
+    e.stopPropagation(); // Evita navegar para a tela de agendamento
 
     if (!user) {
       alert('Você precisa estar logado para curtir um barbeiro!');
       return;
     }
 
-    // Atualização otimista na UI (resposta instantânea)
+    const targetBarber = dbBarbers.find((b) => b.id === barberId);
+    if (!targetBarber) return;
+
+    const currentlyLiked = targetBarber.user_has_liked;
+    const newLikedState = !currentlyLiked;
+
+    // 1. Atualização otimista imediata na interface
     setDbBarbers((prev) =>
       prev.map((b) => {
         if (b.id === barberId) {
-          const newLikedState = !b.user_has_liked;
           return {
             ...b,
             user_has_liked: newLikedState,
-            likes_count: newLikedState ? b.likes_count + 1 : b.likes_count - 1,
+            likes_count: newLikedState ? b.likes_count + 1 : Math.max(0, b.likes_count - 1),
           };
         }
         return b;
       })
     );
 
-    const targetBarber = dbBarbers.find((b) => b.id === barberId);
-    const currentlyLiked = targetBarber?.user_has_liked;
-
     try {
-      if (currentlyLiked) {
-        // Descurtir: Atualiza a coluna liked para false
-        const { error } = await supabase
-          .from('barber_reviews')
-          .update({ liked: false })
-          .eq('client_id', user.id)
-          .eq('barber_id', barberId);
-
-        if (error) throw error;
-      } else {
-        // Verifica se já existe algum registro desse cliente para este barbeiro
-        const { data: existingReview } = await supabase
-          .from('barber_reviews')
-          .select('id')
-          .eq('client_id', user.id)
-          .eq('barber_id', barberId)
-          .maybeSingle();
-
-        if (existingReview) {
-          // Se já existia um registro antigo, atualiza 'liked' para true
-          const { error } = await supabase
-            .from('barber_reviews')
-            .update({ liked: true })
-            .eq('id', existingReview.id);
-
-          if (error) throw error;
-        } else {
-          // Cria um novo registro de curtida
-          const { error } = await supabase.from('barber_reviews').insert({
+      // 2. Persiste a alteração no Supabase usando upsert (requer UNIQUE constraint em client_id, barber_id)
+      const { error } = await supabase
+        .from('barber_reviews')
+        .upsert(
+          {
             client_id: user.id,
             barber_id: barberId,
-            liked: true,
-          });
+            liked: newLikedState,
+          },
+          { onConflict: 'client_id,barber_id' }
+        );
 
-          if (error) throw error;
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao atualizar curtida no Supabase:', err);
-      // Reverte em caso de falha no servidor
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('Erro ao salvar curtida no banco de dados:', err.message || err);
+
+      // 3. Reverte a interface em caso de falha no banco
       setDbBarbers((prev) =>
         prev.map((b) => {
           if (b.id === barberId) {
             return {
               ...b,
               user_has_liked: currentlyLiked,
-              likes_count: currentlyLiked ? b.likes_count : b.likes_count - 1,
+              likes_count: targetBarber.likes_count,
             };
           }
           return b;
