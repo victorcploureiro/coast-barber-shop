@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { 
-  Calendar as CalendarIcon, Scissors, CheckCircle2, 
-  Loader2, AlertCircle, Trash2, PlusCircle, CalendarDays, 
-  ArrowLeft, Clock, History, ChevronDown, ChevronUp
+  Scissors, CheckCircle2, Loader2, AlertCircle, 
+  Trash2, PlusCircle, CalendarDays, Clock, History, 
+  ChevronDown, ChevronUp, ChevronRight 
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
@@ -26,7 +26,7 @@ interface Appointment {
 }
 
 interface BookPageProps {
-  onNavigate: (tab: TabKey) => void;
+  onNavigate: (tab: TabKey, serviceId?: string) => void;
   preselectedServiceId?: string;
 }
 
@@ -43,14 +43,14 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   
-  // Estados do formulário de agendamento (Expansível)
+  // Estados do formulário expansível
   const [isBookingOpen, setIsBookingOpen] = useState<boolean>(!!preselectedServiceId);
   const [selectedService, setSelectedService] = useState<string>(preselectedServiceId || '');
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   
-  // Estados de carregamento e feedback
+  // Feedback e carregamento
   const [loadingData, setLoadingData] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -72,15 +72,15 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
           .from('appointments')
           .select('*, service:services(name, price, duration), barber:profiles(name)')
           .eq('client_id', user.id)
-          .order('date', { ascending: true })
-          .order('time_slot', { ascending: true });
+          .order('date', { ascending: false })
+          .order('time_slot', { ascending: false });
 
         if (!aptsError && apts) {
           setAppointments(apts as any);
         }
       }
     } catch (err) {
-      console.error('Erro ao carregar dados de agendamento:', err);
+      console.error('Erro ao carregar dados:', err);
     } finally {
       setLoadingData(false);
     }
@@ -90,6 +90,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     loadPageData();
   }, [user]);
 
+  // Atualiza a seleção e abre o form caso venha pré-selecionado da Home
   useEffect(() => {
     if (preselectedServiceId) {
       setSelectedService(preselectedServiceId);
@@ -97,22 +98,21 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     }
   }, [preselectedServiceId]);
 
-  // Separação dos status de agendamentos
+  // Separação dos agendamentos
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  const upcomingAppointments = appointments.filter(
-    (a) => a.status === 'scheduled' && a.date >= todayStr
-  );
+  const upcomingAppointments = appointments
+    .filter((a) => a.status === 'scheduled' && a.date >= todayStr)
+    .sort((a, b) => (a.date + a.time_slot).localeCompare(b.date + b.time_slot));
   
   const pastAppointments = appointments.filter(
     (a) => a.status !== 'scheduled' || a.date < todayStr
   );
 
   const nextAppointment = upcomingAppointments[0];
-  const lastCompletedAppointment = pastAppointments.find((a) => a.status === 'completed') || pastAppointments[0];
 
-  // Ação de Criar Agendamento
+  // Criar agendamento
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -142,17 +142,13 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
 
       if (error) throw error;
 
-      // --- Integração Preparada com Google Agenda ---
+      // Sincronização preparada com Google Agenda
       if (data) {
         const serviceObj = services.find(s => s.id === selectedService);
         const barberObj = barbers.find(b => b.id === selectedBarber);
-        
         const durationMinutes = serviceObj?.duration || 30;
         const startISO = `${selectedDate}T${selectedTime}:00-03:00`;
-        
-        // Calcula horário final
-        const startDate = new Date(startISO);
-        const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+        const endDate = new Date(new Date(startISO).getTime() + durationMinutes * 60000);
 
         await syncAppointmentToGoogleCalendar({
           summary: `Barbearia: ${serviceObj?.name || 'Agendamento'}`,
@@ -163,7 +159,6 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
         });
       }
 
-      // Sucesso & Limpeza
       setSuccessMessage('Agendamento realizado com sucesso!');
       setSelectedService('');
       setSelectedBarber('');
@@ -171,20 +166,17 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
       setSelectedTime('');
       setIsBookingOpen(false);
 
-      // Recarrega os dados para atualizar o topo imediatamente
       await loadPageData();
-
-      // Rola a página suavemente para o topo
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error('Erro ao agendar:', err);
-      setErrorMessage(err.message || 'Erro ao realizar agendamento. Tente novamente.');
+      setErrorMessage(err.message || 'Erro ao realizar agendamento.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Ação de Cancelar Agendamento
+  // Cancelar agendamento
   const handleCancelAppointment = async (id: string) => {
     if (!confirm('Deseja realmente cancelar este agendamento?')) return;
 
@@ -196,10 +188,9 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
         .eq('id', id);
 
       if (error) throw error;
-
       await loadPageData();
     } catch (err) {
-      console.error('Erro ao cancelar agendamento:', err);
+      console.error('Erro ao cancelar:', err);
       alert('Não foi possível cancelar o agendamento.');
     } finally {
       setCancellingId(null);
@@ -211,23 +202,18 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
       <Header title="Agendamento" />
 
       <main className="px-5 mt-3 space-y-6">
-        {/* Banner de Feedback de Sucesso */}
+        {/* Banner de Feedback - Sucesso */}
         {successMessage && (
           <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between animate-fade-in shadow-lg">
             <div className="flex items-center gap-2.5">
               <CheckCircle2 size={18} className="shrink-0" />
               <span className="font-medium">{successMessage}</span>
             </div>
-            <button 
-              onClick={() => setSuccessMessage('')}
-              className="text-xs text-emerald-400/60 hover:text-emerald-400"
-            >
-              ✕
-            </button>
+            <button onClick={() => setSuccessMessage('')} className="text-xs text-emerald-400/60 hover:text-emerald-400">✕</button>
           </div>
         )}
 
-        {/* Banner de Feedback de Erro */}
+        {/* Banner de Feedback - Erro */}
         {errorMessage && (
           <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2.5 animate-fade-in">
             <AlertCircle size={18} className="shrink-0" />
@@ -238,14 +224,14 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
         {loadingData ? (
           <div className="py-16 flex flex-col items-center justify-center gap-3 text-ink-300">
             <Loader2 size={28} className="animate-spin text-gold-400" />
-            <span className="text-xs font-medium">Sincronizando agendamentos...</span>
+            <span className="text-xs font-medium">Carregando agendamentos...</span>
           </div>
         ) : (
           <>
-            {/* 1. TOPO DA TELA: PRÓXIMO AGENDAMENTO DESTAQUE */}
-            {nextAppointment ? (
-              <section className="animate-slide-up">
-                <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase mb-2.5 flex items-center gap-1.5">
+            {/* 1. TOPO DA TELA: PRÓXIMO AGENDAMENTO (Oculta completamente se não houver agendamentos futuros) */}
+            {nextAppointment && (
+              <section className="animate-slide-up space-y-3">
+                <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase flex items-center gap-1.5">
                   <CalendarDays size={14} /> Próximo Agendamento
                 </h3>
                 <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/40 shadow-xl relative overflow-hidden">
@@ -291,73 +277,38 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                     </button>
                   </div>
                 </div>
-              </section>
-            ) : (
-              <div className="p-5 rounded-2xl bg-ink-900/60 border border-white/5 text-center space-y-2">
-                <CalendarIcon size={28} className="mx-auto text-ink-400" />
-                <p className="text-xs font-semibold text-ink-200">Você não possui agendamentos futuros.</p>
-                <p className="text-[11px] text-ink-400">Agende um novo serviço abaixo a qualquer momento.</p>
-              </div>
-            )}
 
-            {/* LISTA DE OUTROS AGENDAMENTOS FUTUROS (Caso haja mais de um) */}
-            {upcomingAppointments.length > 1 && (
-              <section className="space-y-2">
-                <h4 className="text-xs font-bold text-ink-300 uppercase tracking-wider">
-                  Outros Serviços Agendados ({upcomingAppointments.length - 1})
-                </h4>
-                {upcomingAppointments.slice(1).map((apt) => (
-                  <div key={apt.id} className="card p-3.5 flex items-center justify-between border-white/5">
-                    <div className="flex items-center gap-3">
-                      <Scissors size={16} className="text-gold-400" />
-                      <div>
-                        <p className="text-xs font-semibold text-ink-100">{apt.service?.name}</p>
-                        <p className="text-[10px] text-ink-400">{apt.date} às {apt.time_slot} • {apt.barber?.name}</p>
+                {/* Outros agendamentos futuros, se houver mais de 1 */}
+                {upcomingAppointments.length > 1 && (
+                  <div className="space-y-2 pt-1">
+                    <h4 className="text-[11px] font-bold text-ink-300 uppercase tracking-wider">
+                      Outros Serviços Agendados ({upcomingAppointments.length - 1})
+                    </h4>
+                    {upcomingAppointments.slice(1).map((apt) => (
+                      <div key={apt.id} className="card p-3.5 flex items-center justify-between border-white/5">
+                        <div className="flex items-center gap-3">
+                          <Scissors size={15} className="text-gold-400" />
+                          <div>
+                            <p className="text-xs font-semibold text-ink-100">{apt.service?.name}</p>
+                            <p className="text-[10px] text-ink-400">{apt.date} às {apt.time_slot} • {apt.barber?.name}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleCancelAppointment(apt.id)}
+                          className="text-red-400 p-1.5 hover:bg-red-500/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
-                    </div>
-                    <button
-                      onClick={() => handleCancelAppointment(apt.id)}
-                      className="text-red-400 p-1.5 hover:bg-red-500/10 rounded-lg transition-colors"
-                      title="Cancelar"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    ))}
                   </div>
-                ))}
+                )}
               </section>
             )}
 
-            {/* ÚLTIMO SERVIÇO REALIZADO */}
-            {lastCompletedAppointment && (
-              <section className="pt-1">
-                <h4 className="text-xs font-bold text-ink-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <History size={13} /> Último Serviço Realizado
-                </h4>
-                <div className="p-3.5 rounded-xl bg-ink-900/50 border border-white/5 flex items-center justify-between opacity-80">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center text-ink-300">
-                      <Scissors size={14} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-ink-200">{lastCompletedAppointment.service?.name}</p>
-                      <p className="text-[10px] text-ink-400">{lastCompletedAppointment.date} • {lastCompletedAppointment.barber?.name}</p>
-                    </div>
-                  </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    lastCompletedAppointment.status === 'completed' 
-                      ? 'bg-emerald-500/10 text-emerald-400' 
-                      : 'bg-red-500/10 text-red-400'
-                  }`}>
-                    {lastCompletedAppointment.status === 'completed' ? 'Concluído' : 'Cancelado'}
-                  </span>
-                </div>
-              </section>
-            )}
-
-            {/* 2. PARTE INFERIOR: FORMULÁRIO DE AGENDAMENTO EXPANSÍVEL */}
-            <section className="pt-2">
+            {/* 2. MEIO DA TELA: FORMULÁRIO DE NOVO AGENDAMENTO */}
+            <section className="pt-1">
               <div className="card border-gold-500/30 overflow-hidden transition-all">
-                {/* Cabeçalho do Card Expansível */}
                 <button
                   onClick={() => setIsBookingOpen(!isBookingOpen)}
                   className="w-full p-4 flex items-center justify-between bg-gradient-to-r from-ink-900 to-ink-950 text-left"
@@ -378,11 +329,10 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                   )}
                 </button>
 
-                {/* Conteúdo do Formulário */}
                 {isBookingOpen && (
                   <div className="p-5 border-t border-white/5 animate-fade-in">
                     <form onSubmit={handleCreateAppointment} className="space-y-4">
-                      {/* Selecionar Serviço */}
+                      {/* 1. Serviço */}
                       <div>
                         <label className="block text-xs font-semibold text-ink-300 mb-1.5">
                           1. Escolha o Serviço
@@ -402,7 +352,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                         </select>
                       </div>
 
-                      {/* Selecionar Barbeiro */}
+                      {/* 2. Barbeiro */}
                       <div>
                         <label className="block text-xs font-semibold text-ink-300 mb-1.5">
                           2. Escolha o Barbeiro
@@ -422,7 +372,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                         </select>
                       </div>
 
-                      {/* Selecionar Data */}
+                      {/* 3. Data */}
                       <div>
                         <label className="block text-xs font-semibold text-ink-300 mb-1.5">
                           3. Selecione a Data
@@ -437,7 +387,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                         />
                       </div>
 
-                      {/* Selecionar Horário */}
+                      {/* 4. Horário */}
                       <div>
                         <label className="block text-xs font-semibold text-ink-300 mb-1.5">
                           4. Escolha o Horário
@@ -460,7 +410,6 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                         </div>
                       </div>
 
-                      {/* Confirmar */}
                       <button
                         type="submit"
                         disabled={submitting}
@@ -477,6 +426,44 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                 )}
               </div>
             </section>
+
+            {/* 3. PARTE INFERIOR: CARD DE HISTÓRICO DE AGENDAMENTOS */}
+            {pastAppointments.length > 0 && (
+              <section className="pt-2">
+                <div className="card p-5 border-white/5 bg-ink-900/40 space-y-3">
+                  <h4 className="text-xs font-bold text-ink-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <History size={14} className="text-gold-400" /> Histórico de Serviços
+                  </h4>
+                  <div className="space-y-2">
+                    {pastAppointments.map((apt) => (
+                      <div 
+                        key={apt.id} 
+                        className="p-3 rounded-xl bg-ink-950/60 border border-white/5 flex items-center justify-between opacity-85"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center text-ink-300 shrink-0">
+                            <Scissors size={14} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-ink-100">{apt.service?.name}</p>
+                            <p className="text-[10px] text-ink-400">
+                              {apt.date} • {apt.barber?.name}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          apt.status === 'completed' 
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }`}>
+                          {apt.status === 'completed' ? 'Concluído' : 'Cancelado'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
           </>
         )}
       </main>
