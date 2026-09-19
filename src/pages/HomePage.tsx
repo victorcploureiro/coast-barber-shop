@@ -49,61 +49,99 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
 
-  // Cálculo dinâmico de anos baseado na data de fundação no BRAND_CONFIG (2019)
+  // Cálculo dinâmico dos anos de história baseado no BRAND_CONFIG
   const currentYear = new Date().getFullYear();
   const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
 
-  // Avaliação Google conectada com os dados reais da Coast Barber Shop - Vila Guarani
-  const [googleRating] = useState<{ rating: number; count: number }>({
-    rating: 4.9,
-    count: 142 // Total de avaliações do Google Places na Vila Guarani
-  });
+  // Estado para armazenar os dados vindos da Edge Function do Google Places
+  const [googleData, setGoogleData] = useState<{ rating: number; user_ratings_total: number; url?: string } | null>(null);
 
   // Accordions iniciam fechados
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
 
-  // Likes dos barbeiros iniciam em 0
+  // Curtidas persistidas via tabela barber_reviews
   const [likes, setLikes] = useState<Record<string, { count: number; liked: boolean }>>({});
 
-  // 1. Buscar barbeiros do Supabase e inicializar likes em 0
+  // 1. Chamar Edge Function do Supabase (Google Places)
   useEffect(() => {
-    async function fetchBarbers() {
+    async function fetchGooglePlacesData() {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await supabase.functions.invoke('google-rating');
+        if (!error && data) {
+          setGoogleData({
+            rating: data.rating || 4.9,
+            user_ratings_total: data.user_ratings_total || data.reviews_count || 0,
+            url: data.url || 'https://www.google.com/maps/place/Coast+Barber+Shop+%7C+Barbearia+em+SP/@-23.6332722,-46.6410901,17z/data=!3m2!4b1!5s0x94ce5afb08a7ead1:0x71d4a5bdc25112e2!4m6!3m5!1s0x94ce5b6dc91d67a5:0x65f01e136b070fc3!8m2!3d-23.6332771!4d-46.6385152!16s%2Fg%2F11fpbj0gn7?entry=ttu&g_ep=EgoyMDI2MDkxNi4wIKXMDSoASAFQAw%3D%3D'
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao chamar Edge Function google-rating:', err);
+      }
+    }
+
+    fetchGooglePlacesData();
+  }, []);
+
+  // 2. Buscar Barbeiros e carregar contagem e status de curtidas da tabela `barber_reviews`
+  useEffect(() => {
+    async function fetchBarbersAndLikes() {
+      try {
+        const { data: barbersData, error: barbersError } = await supabase
           .from('profiles')
           .select('*')
           .ilike('role', 'barbeiro')
           .order('name');
 
-        if (!error && data && data.length > 0) {
-          const mapped: Barber[] = data.map((b) => ({
-            id: b.id,
-            name: b.name || 'Barbeiro',
-            role: 'Barbeiro',
-            image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-            rating: b.rating || 5.0,
-            reviews: b.reviews || 0,
-            bio: '',
-            specialties: []
-          }));
-          setDbBarbers(mapped);
+        if (barbersError || !barbersData) return;
 
-          // Inicializa os likes rigorosamente em 0
-          const initialLikes: Record<string, { count: number; liked: boolean }> = {};
-          mapped.forEach((b) => {
-            initialLikes[b.id] = { count: 0, liked: false };
-          });
-          setLikes(initialLikes);
-        }
+        const mapped: Barber[] = barbersData.map((b) => ({
+          id: b.id,
+          name: b.name || 'Barbeiro',
+          role: 'Barbeiro',
+          image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+          rating: b.rating || 5.0,
+          reviews: b.reviews || 0,
+          bio: '',
+          specialties: []
+        }));
+        setDbBarbers(mapped);
+
+        // Buscar todas as curtidas registradas na tabela `barber_reviews`
+        const { data: reviewsData, error: reviewsError } = await supabase
+          .from('barber_reviews')
+          .select('barber_id, client_id, liked');
+
+        const likesState: Record<string, { count: number; liked: boolean }> = {};
+
+        mapped.forEach((barber) => {
+          // Filtrar todas as curtidas ativas para este barbeiro
+          const barberLikes = (reviewsData || []).filter(
+            (r) => r.barber_id === barber.id && r.liked === true
+          );
+
+          // Verificar se o usuário logado atualmente já curtiu
+          const isUserLiked = user
+            ? (reviewsData || []).some(
+                (r) => r.barber_id === barber.id && r.client_id === user.id && r.liked === true
+              )
+            : false;
+
+          likesState[barber.id] = {
+            count: barberLikes.length,
+            liked: isUserLiked,
+          };
+        });
+
+        setLikes(likesState);
       } catch (err) {
-        console.error('Erro ao buscar barbeiros:', err);
+        console.error('Erro ao buscar barbeiros e curtidas:', err);
       }
     }
 
-    fetchBarbers();
-  }, []);
+    fetchBarbersAndLikes();
+  }, [user]);
 
-  // 2. Buscar serviços do Supabase
+  // 3. Buscar Serviços
   useEffect(() => {
     async function fetchServices() {
       try {
@@ -123,7 +161,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchServices();
   }, []);
 
-  // 3. Buscar perfil e próximo agendamento do cliente
+  // 4. Buscar Usuário e Agendamentos
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -176,18 +214,59 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     }));
   };
 
-  const toggleLike = (barberId: string) => {
-    setLikes((prev) => {
-      const current = prev[barberId] || { count: 0, liked: false };
-      const isLiked = current.liked;
-      return {
+  // Alternar e Salvar no Supabase (Tabela barber_reviews)
+  const toggleLike = async (barberId: string) => {
+    if (!user) {
+      alert('Faça login para curtir um barbeiro!');
+      return;
+    }
+
+    const current = likes[barberId] || { count: 0, liked: false };
+    const newLikedState = !current.liked;
+    const newCount = newLikedState ? current.count + 1 : Math.max(0, current.count - 1);
+
+    // Atualização otimista do estado na UI
+    setLikes((prev) => ({
+      ...prev,
+      [barberId]: {
+        count: newCount,
+        liked: newLikedState,
+      },
+    }));
+
+    try {
+      // Verificar se o registro já existe para este cliente e barbeiro
+      const { data: existingReview } = await supabase
+        .from('barber_reviews')
+        .select('id')
+        .eq('client_id', user.id)
+        .eq('barber_id', barberId)
+        .maybeSingle();
+
+      if (existingReview) {
+        // Atualizar linha existente
+        await supabase
+          .from('barber_reviews')
+          .update({ liked: newLikedState })
+          .eq('id', existingReview.id);
+      } else {
+        // Inserir nova linha
+        await supabase
+          .from('barber_reviews')
+          .insert({
+            client_id: user.id,
+            barber_id: barberId,
+            liked: newLikedState,
+          });
+      }
+    } catch (err) {
+      console.error('Erro ao salvar curtida no Supabase:', err);
+      // Reverter alteração otimista se der erro no servidor
+      setLikes((prev) => ({
         ...prev,
-        [barberId]: {
-          count: isLiked ? Math.max(0, current.count - 1) : current.count + 1,
-          liked: !isLiked,
-        },
-      };
-    });
+        [barberId]: current,
+      }));
+    }
   };
 
   const groupedServices = dbServices.reduce<Record<string, Service[]>>((acc, service) => {
@@ -261,7 +340,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </section>
       )}
 
-      {/* Cards de Métricas (Anos calculados por BRAND_CONFIG + Google Places Vila Guarani) */}
+      {/* Cards de Métricas */}
       <section className="grid grid-cols-2 gap-3 px-5 mt-4">
         <div className="card p-3 text-center flex flex-col justify-center items-center">
           <p className="font-display text-2xl gold-text tracking-wide">{yearsOfHistory}+</p>
@@ -269,16 +348,20 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
 
         <a 
-          href="https://maps.google.com/?q=Coast+Barber+Shop+Vila+Guarani" 
+          href={googleData?.url || "https://www.google.com/maps/place/Coast+Barber+Shop+%7C+Barbearia+em+SP/@-23.6332722,-46.6410901,17z/data=!3m2!4b1!5s0x94ce5afb08a7ead1:0x71d4a5bdc25112e2!4m6!3m5!1s0x94ce5b6dc91d67a5:0x65f01e136b070fc3!8m2!3d-23.6332771!4d-46.6385152!16s%2Fg%2F11fpbj0gn7?entry=ttu&g_ep=EgoyMDI2MDkxNi4wIKXMDSoASAFQAw%3D%3D"} 
           target="_blank" 
           rel="noopener noreferrer"
           className="card p-3 flex flex-col justify-center items-center text-center hover:border-gold-500/40 transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-1">
             <Star size={16} className="text-gold-400 fill-gold-400" />
-            <span className="font-display text-2xl gold-text tracking-wide">{googleRating.rating}</span>
+            <span className="font-display text-2xl gold-text tracking-wide">
+              {googleData ? googleData.rating : '4.9'}
+            </span>
           </div>
-          <p className="text-[10px] text-ink-300 mt-0.5">Google ({googleRating.count} avaliações)</p>
+          <p className="text-[10px] text-ink-300 mt-0.5">
+            Google {googleData ? `(${googleData.user_ratings_total} avaliações)` : 'Avaliação'}
+          </p>
         </a>
       </section>
 
@@ -348,7 +431,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Barbeiros com likes iniciando em 0 */}
+      {/* Nossa Equipe com curtidas conectadas ao Supabase */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
@@ -402,7 +485,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Clube Coast */}
+      {/* Clube */}
       <section className="px-5 mt-6">
         <div className="relative rounded-2xl overflow-hidden p-5 bg-gradient-to-br from-ink-800 to-ink-850 border border-gold-500/20">
           <div className="flex items-center gap-3 mb-2">
