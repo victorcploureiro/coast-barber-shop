@@ -33,6 +33,16 @@ interface HomePageProps {
   onNavigate: (tab: TabKey, serviceId?: string) => void;
 }
 
+// Função auxiliar para capitalizar cada palavra da categoria (ex: "cabelo e barba" -> "Cabelo E Barba" / "cabelo" -> "Cabelo")
+function capitalizeCategory(category: string): string {
+  if (!category) return 'Outros Serviços';
+  return category
+    .toLowerCase()
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 export default function HomePage({ onNavigate }: HomePageProps) {
   const { user } = useAuth();
   const [nextAppointment, setNextAppointment] = useState<any>(null);
@@ -40,7 +50,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
   
-  // Estado para controlar quais categorias de serviço estão abertas/fechadas (todas iniciam fechadas)
+  // Estado para controlar quais categorias de serviço estão abertas/fechadas
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
 
   // Estado local para gerenciar likes dos barbeiros
@@ -173,9 +183,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     });
   };
 
-  // Agrupar serviços por categoria
+  // Agrupar serviços por categoria e aplicar a capitalização no nome da categoria
   const groupedServices = dbServices.reduce<Record<string, Service[]>>((acc, service) => {
-    const category = service.category || 'Outros Serviços';
+    const rawCategory = service.category || 'outros serviços';
+    const category = capitalizeCategory(rawCategory);
     if (!acc[category]) acc[category] = [];
     acc[category].push(service);
     return acc;
