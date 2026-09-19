@@ -1,554 +1,140 @@
 import { useState, useEffect } from 'react';
-import { 
-  Star, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, Loader2, Bell, Heart
-} from 'lucide-react';
+import { Scissors, Calendar, ArrowRight, Clock, MapPin, Phone } from 'lucide-react';
 import Header from '@/components/Header';
-import { heroImage, shopInterior, beardGrooming } from '@/data';
-import { BRAND_CONFIG } from '@/config/brand';
-import type { TabKey, Service } from '@/types';
-import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-
-interface Barber {
-  id: string;
-  name: string;
-  role: string;
-  image: string;
-  likes_count: number;
-  user_has_liked?: boolean;
-  bio?: string;
-  specialties?: string[];
-}
-
-const iconMap: Record<string, typeof Scissors> = {
-  scissors: Scissors,
-  sparkles: Sparkles,
-  flame: Flame,
-  palette: Palette,
-  eye: Eye,
-  crown: Crown,
-};
-
-// Ordem exata desejada das categorias
-const categoryOrder: string[] = ['cabelo', 'barba', 'combo', 'quimica', 'cuidados'];
-
-const categoryLabels: Record<string, string> = {
-  cabelo: 'Cabelo & Estilo',
-  barba: 'Barba & Ritual',
-  combo: 'Combos Exclusivos',
-  quimica: 'Tratamentos Químicos',
-  cuidados: 'Cuidados & Waxing',
-};
+import type { Service, TabKey } from '@/types';
 
 interface HomePageProps {
   onNavigate: (tab: TabKey, serviceId?: string) => void;
 }
 
 export default function HomePage({ onNavigate }: HomePageProps) {
-  const { user } = useAuth();
-  const [nextAppointment, setNextAppointment] = useState<any>(null);
-  const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
-  const [dbServices, setDbServices] = useState<Service[]>([]);
-  
-  // Estados de controle da interface
-  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
-  const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
-  const [userName, setUserName] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [featuredServices, setFeaturedServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Cálculo dos anos de história
-  const currentYear = new Date().getFullYear();
-  const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
-
-  // Estados do Google Rating via API
-  const [googleRating, setGoogleRating] = useState<number | null>(null);
-  const [reviewCount, setReviewCount] = useState<number | null>(null);
-  const [loadingRating, setLoadingRating] = useState<boolean>(true);
-
-  // Toggle do Accordion de Categorias
-  const toggleCategory = (cat: string) => {
-    setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
-  };
-
-  // Toggle do 'Ver mais' nas descrições de serviços
-  const toggleExpandService = (e: React.MouseEvent, serviceId: string) => {
-    e.stopPropagation();
-    setExpandedServices((prev) => ({
-      ...prev,
-      [serviceId]: !prev[serviceId],
-    }));
-  };
-
-  // 1. Busca dados do Google Places via Edge Function
   useEffect(() => {
-    async function fetchRating() {
+    async function loadFeaturedServices() {
       try {
-        const { data, error } = await supabase.functions.invoke('google-rating');
-        if (!error && data) {
-          const ratingVal = typeof data.rating === 'number' ? data.rating : Number(data.rating);
-          const countVal = data.userRatingCount ?? data.user_ratings_total ?? data.reviews_count;
-
-          if (!isNaN(ratingVal)) setGoogleRating(ratingVal);
-          if (countVal !== undefined && !isNaN(Number(countVal))) setReviewCount(Number(countVal));
-        }
-      } catch (err) {
-        console.error('Erro ao buscar avaliação do Google:', err);
-      } finally {
-        setLoadingRating(false);
-      }
-    }
-
-    fetchRating();
-  }, []);
-
-  // 2. Busca barbeiros, curtidas (barber_reviews) e serviços
-  useEffect(() => {
-    async function fetchHomeData() {
-      try {
-        // Busca perfis de barbeiros
-        const { data: barbersData, error: barbersError } = await supabase
-          .from('profiles')
-          .select('*')
-          .ilike('role', 'barbeiro')
-          .order('name');
-
-        if (barbersError) throw barbersError;
-
-        // Busca registros de curtidas
-        const { data: reviewsData } = await supabase
-          .from('barber_reviews')
-          .select('barber_id, client_id, liked')
-          .eq('liked', true);
-
-        if (barbersData && barbersData.length > 0) {
-          const mappedBarbers: Barber[] = barbersData.map((b) => {
-            const barberLikes = reviewsData?.filter((r) => r.barber_id === b.id) || [];
-            const userHasLiked = user ? barberLikes.some((r) => r.client_id === user.id) : false;
-
-            return {
-              id: b.id,
-              name: b.name || 'Barbeiro',
-              role: 'Barbeiro',
-              image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-              likes_count: barberLikes.length,
-              user_has_liked: userHasLiked,
-              bio: '',
-              specialties: []
-            };
-          });
-          setDbBarbers(mappedBarbers);
-        }
-
-        // Busca lista de serviços
-        const { data: servicesData } = await supabase
+        const { data, error } = await supabase
           .from('services')
           .select('*')
-          .order('price', { ascending: true });
+          .limit(4);
 
-        if (servicesData) setDbServices(servicesData);
+        if (!error && data) {
+          setFeaturedServices(data);
+        }
       } catch (err) {
-        console.error('Erro ao buscar dados na Home:', err);
+        console.error('Erro ao carregar serviços em destaque:', err);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchHomeData();
-  }, [user]);
-
-  // 3. Função para curtir/descurtir barbeiro no Supabase (Upsert)
-  const handleLikeBarber = async (e: React.MouseEvent, barberId: string) => {
-    e.stopPropagation();
-
-    if (!user) {
-      alert('Você precisa estar logado para curtir um barbeiro!');
-      return;
-    }
-
-    const targetBarber = dbBarbers.find((b) => b.id === barberId);
-    if (!targetBarber) return;
-
-    const currentlyLiked = targetBarber.user_has_liked;
-    const newLikedState = !currentlyLiked;
-
-    // Atualização otimista imediata na UI
-    setDbBarbers((prev) =>
-      prev.map((b) => {
-        if (b.id === barberId) {
-          return {
-            ...b,
-            user_has_liked: newLikedState,
-            likes_count: newLikedState ? b.likes_count + 1 : Math.max(0, b.likes_count - 1),
-          };
-        }
-        return b;
-      })
-    );
-
-    try {
-      const { error } = await supabase
-        .from('barber_reviews')
-        .upsert(
-          {
-            client_id: user.id,
-            barber_id: barberId,
-            liked: newLikedState,
-          },
-          { onConflict: 'client_id,barber_id' }
-        );
-
-      if (error) throw error;
-    } catch (err: any) {
-      console.error('Erro ao salvar curtida no banco de dados:', err.message || err);
-      
-      // Reverter alteração otimista em caso de erro
-      setDbBarbers((prev) =>
-        prev.map((b) => {
-          if (b.id === barberId) {
-            return {
-              ...b,
-              user_has_liked: currentlyLiked,
-              likes_count: targetBarber.likes_count,
-            };
-          }
-          return b;
-        })
-      );
-    }
-  };
-
-  // 4. Busca nome do usuário e próximo agendamento
-  useEffect(() => {
-    if (!user) {
-      setNextAppointment(null);
-      setUserName('');
-      return;
-    }
-
-    async function fetchUserDataAndAppointment() {
-      try {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('name')
-          .eq('id', user.id)
-          .single();
-
-        const rawName = profile?.name || user.user_metadata?.full_name || user.email?.split('@')[0] || '';
-        const firstName = rawName.trim().split(' ')[0];
-        if (firstName) {
-          setUserName(firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase());
-        }
-
-        const now = new Date();
-        const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-        const { data: apts } = await supabase
-          .from('appointments')
-          .select('*, service:services(name), barber:profiles(name)')
-          .eq('client_id', user.id)
-          .eq('status', 'scheduled')
-          .gte('date', localTodayStr)
-          .order('date', { ascending: true })
-          .order('time_slot', { ascending: true })
-          .limit(1);
-
-        if (apts && apts.length > 0) {
-          setNextAppointment(apts[0]);
-        } else {
-          setNextAppointment(null);
-        }
-      } catch (err) {
-        console.error('Erro ao buscar agendamento:', err);
-      }
-    }
-
-    fetchUserDataAndAppointment();
-  }, [user]);
-
-  // Agrupamento dos serviços por categoria
-  const groupedServices = dbServices.reduce((acc, service) => {
-    const cat = service.category?.toLowerCase() || 'outros';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(service);
-    return acc;
-  }, {} as Record<string, Service[]>);
-
-  // Ordenação personalizada das categorias
-  const sortedCategories = [
-    ...categoryOrder.filter(cat => groupedServices[cat]),
-    ...Object.keys(groupedServices).filter(cat => !categoryOrder.includes(cat))
-  ];
+    loadFeaturedServices();
+  }, []);
 
   return (
-    <div className="min-h-screen pb-24">
-      <Header 
-        title={userName ? `Olá, ${userName}` : "Bem-vindo"} 
-        showLocation 
-        actionIcon={Bell}
-        onActionClick={() => onNavigate('book')}
-      />
+    <div className="min-h-screen pb-28">
+      <Header title="Barbearia" />
 
-      {/* Hero Banner / Card de Agendamento */}
-      {nextAppointment ? (
-        <section className="mx-5 mt-2 animate-slide-up">
-          <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-full gold-gradient text-ink-950">
-                Seu Agendamento
-              </span>
-              <span className="text-xs text-ink-300 flex items-center gap-1">
-                <Calendar size={13} className="text-gold-400" />
-                {nextAppointment.date}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4 my-2">
-              <div className="h-12 w-12 rounded-xl gold-gradient flex items-center justify-center text-ink-950 shrink-0">
-                <Scissors size={24} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-bold text-ink-100 truncate">
-                  {nextAppointment.service?.name || 'Serviço Agendado'}
-                </h3>
-                <p className="text-xs text-ink-300">
-                  com <span className="text-gold-400 font-medium">{nextAppointment.barber?.name || 'Barbeiro'}</span> às <span className="text-ink-100 font-semibold">{nextAppointment.time_slot}</span>
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onNavigate('book')}
-              className="mt-3 w-full py-2.5 rounded-xl bg-ink-800/80 border border-white/10 text-xs font-semibold text-ink-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
-            >
-              Ver meus agendamentos <ChevronRight size={14} />
-            </button>
-          </div>
-        </section>
-      ) : (
-        <section className="relative mx-5 mt-2 rounded-2xl overflow-hidden h-56 animate-slide-up">
-          <img src={heroImage} alt={BRAND_CONFIG.name} className="absolute inset-0 w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/60 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-ink-950/80 to-transparent" />
-          <div className="absolute bottom-0 left-0 p-5">
-            <p className="text-gold-400 text-xs font-semibold tracking-widest uppercase mb-1">
-              {BRAND_CONFIG.tagline}
-            </p>
-            <h2 className="font-display text-3xl tracking-wide text-white leading-none uppercase">
-              A NAVALHA QUE<br />DEFINE SEU ESTILO
+      <main className="px-5 mt-4 space-y-6">
+        {/* Hero / Banner Principal */}
+        <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gold-500/20 via-ink-900 to-ink-950 p-6 border border-gold-500/30 shadow-xl">
+          <div className="relative z-10 space-y-3">
+            <span className="text-[10px] font-extrabold tracking-widest uppercase px-2.5 py-1 rounded-full gold-gradient text-ink-950 inline-block">
+              Estilo & Tradição
+            </span>
+            <h2 className="text-xl font-bold text-ink-100 leading-tight">
+              Seu visual em boas mãos
             </h2>
+            <p className="text-xs text-ink-300 leading-relaxed">
+              Agende seu horário com nossos profissionais e garanta o melhor atendimento.
+            </p>
             <button
               onClick={() => onNavigate('book')}
-              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl gold-gradient text-ink-950 text-sm font-semibold active:scale-95 transition-transform"
+              className="mt-2 py-3 px-5 rounded-xl gold-gradient text-ink-950 font-bold text-xs flex items-center gap-2 shadow-lg active:scale-95 transition-transform"
             >
-              Agendar agora <ChevronRight size={16} />
+              <Calendar size={16} />
+              Agendar Horário
             </button>
           </div>
         </section>
-      )}
 
-      {/* Métricas e Google Rating */}
-      <section className="grid grid-cols-2 gap-3 px-5 mt-4">
-        <div className="card p-3 text-center flex flex-col items-center justify-center">
-          <p className="font-display text-2xl gold-text tracking-wide">
-            {yearsOfHistory}+
-          </p>
-          <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
-        </div>
-
-        <a 
-          href="https://maps.google.com/?q=Coast+Barber+Shop+Vila+Guarani"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="card p-3 text-center flex flex-col items-center justify-center hover:border-gold-500/40 transition-colors cursor-pointer"
-        >
-          <p className="font-display text-2xl gold-text tracking-wide flex items-center justify-center gap-1">
-            {loadingRating ? (
-              '...'
-            ) : googleRating !== null ? (
-              googleRating.toFixed(1)
-            ) : (
-              '5.0'
-            )}
-            <Star className="w-4 h-4 fill-amber-400 text-amber-400 inline-block align-middle" />
-          </p>
-          <p className="text-[10px] text-ink-300 mt-0.5">
-            {reviewCount ? `${reviewCount} avaliações` : 'Google Rating'}
-          </p>
-        </a>
-      </section>
-
-      {/* Serviços Categorizados */}
-      <section className="px-5 mt-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
-          <button onClick={() => onNavigate('book')} className="text-xs text-gold-400 font-medium flex items-center gap-1">
-            Agendar <ChevronRight size={14} />
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="py-8 flex items-center justify-center gap-2 text-ink-300">
-            <Loader2 size={18} className="animate-spin text-gold-400" />
-            <span className="text-xs">Carregando serviços...</span>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {sortedCategories.map((catKey) => {
-              const isOpen = !!openCategories[catKey];
-              const categoryServices = groupedServices[catKey];
-
-              return (
-                <div key={catKey} className="card overflow-hidden">
-                  <button
-                    onClick={() => toggleCategory(catKey)}
-                    className="w-full p-3.5 flex items-center justify-between bg-ink-850 hover:bg-ink-800 transition-colors"
-                  >
-                    <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
-                      {categoryLabels[catKey] || catKey} ({categoryServices.length})
-                    </span>
-                    <ChevronDown size={16} className={`text-ink-300 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {isOpen && (
-                    <div className="p-2 space-y-2.5 border-t border-white/5">
-                      {categoryServices.map((service) => {
-                        const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
-                        const isExpanded = !!expandedServices[service.id];
-
-                        return (
-                          <div 
-                            key={service.id} 
-                            className="p-3.5 rounded-xl bg-ink-900/60 border border-white/5 flex flex-col gap-3 transition-colors hover:border-gold-500/20"
-                          >
-                            {/* Topo do Card: Ícone, Nome, Duração e Preço */}
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-start gap-3 min-w-0">
-                                <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0 mt-0.5">
-                                  <Icon size={18} className="text-gold-400" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className="text-sm font-semibold text-ink-100 leading-tight">{service.name}</h4>
-                                  <span className="text-[10px] text-ink-400 flex items-center gap-1 mt-1">
-                                    <Clock size={11} /> {service.duration} min
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Valor do Serviço */}
-                              <div className="text-right shrink-0">
-                                <span className="font-display text-lg gold-text tracking-wide">R${service.price}</span>
-                              </div>
-                            </div>
-
-                            {/* Descrição com 'Ver mais' / 'Ver menos' */}
-                            {service.description && (
-                              <div className="text-xs text-ink-300 leading-relaxed pl-1">
-                                <p className={isExpanded ? '' : 'line-clamp-2'}>
-                                  {service.description}
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Botão de Agendar */}
-                            <div className="flex justify-end pt-1 border-t border-white/5">
-                              <button
-                                onClick={() => onNavigate('book', service.id)}
-                                className="px-4 py-1.5 rounded-lg gold-gradient text-ink-950 text-xs font-bold active:scale-95 transition-transform flex items-center gap-1 shadow-md"
-                              >
-                                Agendar <ChevronRight size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Nossa Equipe - Sem redirecionamento ao clicar no card/imagem */}
-      <section className="mt-6">
-        <div className="flex items-center justify-between mb-3 px-5">
-          <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
-          <button onClick={() => onNavigate('book')} className="text-xs text-gold-400 font-medium flex items-center gap-1">
-            Escolher <ChevronRight size={14} />
-          </button>
-        </div>
-
-        <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
-          {dbBarbers.map((barber) => (
-            <div 
-              key={barber.id} 
-              className="card shrink-0 w-36 overflow-hidden flex flex-col justify-between"
+        {/* Serviços em Destaque */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase flex items-center gap-1.5">
+              <Scissors size={14} /> Serviços Populares
+            </h3>
+            <button
+              onClick={() => onNavigate('book')}
+              className="text-xs font-semibold text-ink-300 hover:text-gold-400 flex items-center gap-1 transition-colors"
             >
-              <div>
-                <div className="h-36 overflow-hidden relative">
-                  <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
-                </div>
-                <div className="p-2.5">
-                  <h4 className="text-xs font-bold text-ink-100 truncate">{barber.name}</h4>
-                  <p className="text-[10px] text-gold-400 mb-2">{barber.role}</p>
-                </div>
-              </div>
+              Ver todos <ArrowRight size={12} />
+            </button>
+          </div>
 
-              {/* Botão exclusivo de Curtida */}
-              <div className="px-2.5 pb-2.5">
-                <button
-                  onClick={(e) => handleLikeBarber(e, barber.id)}
-                  className={`w-full py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-all active:scale-95 ${
-                    barber.user_has_liked
-                      ? 'bg-red-500/10 border-red-500/50 text-red-400'
-                      : 'bg-ink-800/80 border-white/10 text-ink-300 hover:border-red-500/30'
-                  }`}
-                >
-                  <Heart
-                    size={13}
-                    className={`transition-colors ${
-                      barber.user_has_liked ? 'fill-red-500 text-red-500' : 'text-ink-400'
-                    }`}
-                  />
-                  <span>{barber.likes_count}</span>
-                </button>
-              </div>
+          {loading ? (
+            <div className="text-center py-6 text-xs text-ink-400">
+              Carregando serviços...
             </div>
-          ))}
-        </div>
-      </section>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              {featuredServices.map((service) => (
+                <div
+                  key={service.id}
+                  className="card p-4 flex items-center justify-between border-white/5 hover:border-gold-500/30 transition-all"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="h-10 w-10 rounded-xl gold-gradient flex items-center justify-center text-ink-950 shrink-0 shadow-md">
+                      <Scissors size={18} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-ink-100">{service.name}</h4>
+                      <p className="text-[10px] text-ink-400 flex items-center gap-1 mt-0.5">
+                        <Clock size={11} /> {service.duration} min
+                      </p>
+                    </div>
+                  </div>
 
-      {/* Galeria */}
-      <section className="px-5 mt-6">
-        <h3 className="text-lg font-bold text-ink-100 mb-3">Galeria</h3>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl overflow-hidden h-32">
-            <img src={shopInterior} alt="Interior da Barbearia" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
-          </div>
-          <div className="rounded-xl overflow-hidden h-32">
-            <img src={beardGrooming} alt="Cuidados com a Barba" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
-          </div>
-        </div>
-      </section>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold gold-text">
+                      R${service.price}
+                    </span>
+                    <button
+                      onClick={() => onNavigate('book', service.id)}
+                      className="py-1.5 px-3 rounded-lg gold-gradient text-ink-950 text-[11px] font-bold active:scale-95 transition-transform"
+                    >
+                      Agendar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
-      {/* CTA Clube Coast */}
-      <section className="px-5 mt-6">
-        <div className="relative rounded-2xl overflow-hidden p-5 bg-gradient-to-br from-ink-800 to-ink-850 border border-gold-500/20">
-          <div className="flex items-center gap-3 mb-2">
-            <TrendingUp size={20} className="text-gold-400" />
-            <h3 className="text-base font-bold text-ink-100">Faça parte do Clube Coast</h3>
+        {/* Informações da Barbearia */}
+        <section className="card p-4 space-y-3 border-white/5 bg-ink-900/40">
+          <h4 className="text-xs font-bold text-ink-200 uppercase tracking-wider">
+            Informações
+          </h4>
+          <div className="space-y-2 text-xs text-ink-300">
+            <div className="flex items-center gap-2.5">
+              <MapPin size={14} className="text-gold-400 shrink-0" />
+              <span>Rua Principal, 123 - Centro</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Clock size={14} className="text-gold-400 shrink-0" />
+              <span>Terça a Sábado: 09:00 às 19:00</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Phone size={14} className="text-gold-400 shrink-0" />
+              <span>(11) 99999-8888</span>
+            </div>
           </div>
-          <p className="text-xs text-ink-300 mb-3">Acumule pontos a cada corte e troque por produtos, cortes grátis e benefícios VIP.</p>
-          <button
-            onClick={() => onNavigate('club')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-ink-700 border border-gold-500/30 text-gold-400 text-sm font-semibold active:scale-95 transition-transform"
-          >
-            Conhecer o clube <ChevronRight size={16} />
-          </button>
-        </div>
-      </section>
+        </section>
+      </main>
     </div>
   );
 }
