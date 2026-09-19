@@ -10,11 +10,11 @@ import type { TabKey } from '@/types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
-  const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
 
-  const handleNavigate = (tab: TabKey, barberId?: string) => {
-    if (barberId) {
-      setSelectedBarberId(barberId);
+  const handleNavigate = (tab: TabKey, serviceId?: string) => {
+    if (serviceId) {
+      setSelectedServiceId(serviceId);
     }
     setActiveTab(tab);
   };
@@ -27,8 +27,8 @@ export default function App() {
         return (
           <BookPage
             onNavigate={handleNavigate}
-            initialBarberId={selectedBarberId}
-            onClearInitialBarber={() => setSelectedBarberId(null)}
+            initialServiceId={selectedServiceId}
+            onClearInitialService={() => setSelectedServiceId(null)}
           />
         );
       case 'appointments':
