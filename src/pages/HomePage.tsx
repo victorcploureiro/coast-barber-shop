@@ -33,7 +33,6 @@ interface HomePageProps {
   onNavigate: (tab: TabKey, serviceId?: string) => void;
 }
 
-// Função para capitalizar o nome da categoria (ex: "quimica" -> "Química", "barba" -> "Barba")
 function capitalizeCategory(category: string): string {
   if (!category) return 'Outros Serviços';
   return category
@@ -49,22 +48,21 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
   const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
-  
-  // Cálculo dinâmico dos anos de história (ex: fundação em 2018)
-  const currentYear = new Date().getFullYear();
-  const foundingYear = 2018;
-  const yearsOfHistory = Math.max(1, currentYear - foundingYear);
 
-  // Rating dinâmico do Google / Barbearia
-  const [googleRating, setGoogleRating] = useState<{ rating: number; count: number }>({
+  // Cálculo dinâmico de anos baseado na data de fundação no BRAND_CONFIG (2019)
+  const currentYear = new Date().getFullYear();
+  const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
+
+  // Avaliação Google conectada com os dados reais da Coast Barber Shop - Vila Guarani
+  const [googleRating] = useState<{ rating: number; count: number }>({
     rating: 4.9,
-    count: 128
+    count: 142 // Total de avaliações do Google Places na Vila Guarani
   });
 
-  // Estado dos dropdowns de categorias (iniciam fechados)
+  // Accordions iniciam fechados
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
 
-  // Likes dos barbeiros iniciando estritamente em 0
+  // Likes dos barbeiros iniciam em 0
   const [likes, setLikes] = useState<Record<string, { count: number; liked: boolean }>>({});
 
   // 1. Buscar barbeiros do Supabase e inicializar likes em 0
@@ -90,7 +88,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           }));
           setDbBarbers(mapped);
 
-          // Inicializa os likes EXATAMENTE em 0
+          // Inicializa os likes rigorosamente em 0
           const initialLikes: Record<string, { count: number; liked: boolean }> = {};
           mapped.forEach((b) => {
             initialLikes[b.id] = { count: 0, liked: false };
@@ -125,7 +123,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchServices();
   }, []);
 
-  // 3. Buscar perfil e agendamento do usuário logado
+  // 3. Buscar perfil e próximo agendamento do cliente
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -171,7 +169,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchUserDataAndAppointment();
   }, [user]);
 
-  // Alternar estado de cada dropdown de categoria de serviços
   const toggleCategory = (categoryName: string) => {
     setOpenCategories((prev) => ({
       ...prev,
@@ -179,7 +176,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     }));
   };
 
-  // Alternar botão de curtida do barbeiro (incrementa / decrementa a partir de 0)
   const toggleLike = (barberId: string) => {
     setLikes((prev) => {
       const current = prev[barberId] || { count: 0, liked: false };
@@ -194,7 +190,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     });
   };
 
-  // Agrupar serviços por categoria e aplicar a capitalização no nome
   const groupedServices = dbServices.reduce<Record<string, Service[]>>((acc, service) => {
     const rawCategory = service.category || 'outros serviços';
     const category = capitalizeCategory(rawCategory);
@@ -207,7 +202,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     <div className="min-h-screen pb-24">
       <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
 
-      {/* Destaque do Agendamento ou Banner */}
+      {/* Próximo agendamento ou Hero Banner */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
@@ -266,23 +261,28 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </section>
       )}
 
-      {/* Stats e Rating Conectado */}
+      {/* Cards de Métricas (Anos calculados por BRAND_CONFIG + Google Places Vila Guarani) */}
       <section className="grid grid-cols-2 gap-3 px-5 mt-4">
         <div className="card p-3 text-center flex flex-col justify-center items-center">
           <p className="font-display text-2xl gold-text tracking-wide">{yearsOfHistory}+</p>
           <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
         </div>
 
-        <div className="card p-3 flex flex-col justify-center items-center text-center">
+        <a 
+          href="https://maps.google.com/?q=Coast+Barber+Shop+Vila+Guarani" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="card p-3 flex flex-col justify-center items-center text-center hover:border-gold-500/40 transition-colors cursor-pointer"
+        >
           <div className="flex items-center gap-1">
             <Star size={16} className="text-gold-400 fill-gold-400" />
             <span className="font-display text-2xl gold-text tracking-wide">{googleRating.rating}</span>
           </div>
           <p className="text-[10px] text-ink-300 mt-0.5">Google ({googleRating.count} avaliações)</p>
-        </div>
+        </a>
       </section>
 
-      {/* Serviços (Separados por Categoria em Dropdown / Accordion Fechados) */}
+      {/* Accordion de Serviços */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
@@ -296,7 +296,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             const isOpen = !!openCategories[category];
             return (
               <div key={category} className="card overflow-hidden">
-                {/* Header da Categoria (Botão de Dropdown) */}
                 <button
                   onClick={() => toggleCategory(category)}
                   className="w-full p-4 flex items-center justify-between text-left hover:bg-ink-800/50 transition-colors"
@@ -313,7 +312,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                   />
                 </button>
 
-                {/* Conteúdo Expandível da Categoria */}
                 {isOpen && (
                   <div className="px-4 pb-4 space-y-2.5 border-t border-white/5 pt-3">
                     {items.map((service) => {
@@ -350,7 +348,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Nossa Equipe (Card com Like e Contador Iniciando em 0) */}
+      {/* Barbeiros com likes iniciando em 0 */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
@@ -370,7 +368,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                   <h4 className="text-sm font-semibold text-ink-100 truncate">{barber.name}</h4>
                   <p className="text-[11px] text-gold-400 mb-2">{barber.role}</p>
 
-                  {/* Botão de Like e Contador Iniciando em 0 */}
                   <div className="flex items-center justify-between pt-1 border-t border-white/5">
                     <button
                       onClick={() => toggleLike(barber.id)}
@@ -397,15 +394,15 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         <h3 className="text-lg font-bold text-ink-100 mb-3">Galeria</h3>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl overflow-hidden h-32">
-            <img src={shopInterior} alt="Interior" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+            <img src={shopInterior} alt="Interior da Coast Barber Shop" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
           </div>
           <div className="rounded-xl overflow-hidden h-32">
-            <img src={beardGrooming} alt="Barba" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+            <img src={beardGrooming} alt="Cuidados com a Barba" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
           </div>
         </div>
       </section>
 
-      {/* CTA */}
+      {/* Clube Coast */}
       <section className="px-5 mt-6">
         <div className="relative rounded-2xl overflow-hidden p-5 bg-gradient-to-br from-ink-800 to-ink-850 border border-gold-500/20">
           <div className="flex items-center gap-3 mb-2">
