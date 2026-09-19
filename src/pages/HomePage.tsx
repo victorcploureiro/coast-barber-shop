@@ -4,7 +4,7 @@ import {
   Flame, Palette, Eye, Crown, Calendar
 } from 'lucide-react';
 import Header from '@/components/Header';
-import { services, barbers as defaultBarbers, heroImage, shopInterior, beardGrooming } from '@/data';
+import { services, heroImage, shopInterior, beardGrooming } from '@/data';
 import { BRAND_CONFIG } from '@/config/brand';
 import type { TabKey, Barber } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -35,7 +35,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
-          .eq('role', 'barbeiro')
+          .ilike('role', 'barbeiro')
           .order('name');
 
         if (!error && data && data.length > 0) {
@@ -50,11 +50,9 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             specialties: []
           }));
           setDbBarbers(mapped);
-        } else {
-          setDbBarbers(defaultBarbers);
         }
-      } catch {
-        setDbBarbers(defaultBarbers);
+      } catch (err) {
+        console.error('Erro ao buscar barbeiros:', err);
       }
     }
 
@@ -106,13 +104,11 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchUserDataAndAppointment();
   }, [user]);
 
-  const activeBarbersList = dbBarbers.length > 0 ? dbBarbers : defaultBarbers;
-
   return (
     <div className="min-h-screen pb-24">
       <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
 
-      {/* Destaque ou Hero */}
+      {/* Destaque do Agendamento ou Banner */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
@@ -185,7 +181,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         ))}
       </section>
 
-      {/* Serviços: Redireciona com o serviço selecionado */}
+      {/* Serviços */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
@@ -223,13 +219,13 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Nossa Equipe: APENAS APRESENTAÇÃO (sem redirecionar ao clicar) */}
+      {/* Nossa Equipe (Apenas Apresentação) */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
         </div>
         <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
-          {activeBarbersList.map((barber) => (
+          {dbBarbers.map((barber) => (
             <div 
               key={barber.id} 
               className="card shrink-0 w-40 overflow-hidden"
