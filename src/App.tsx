@@ -2,7 +2,6 @@ import { useState } from 'react';
 import BottomNav from '@/components/BottomNav';
 import HomePage from '@/pages/HomePage';
 import BookPage from '@/pages/BookPage';
-import AppointmentsPage from '@/pages/AppointmentsPage';
 import ClubPage from '@/pages/ClubPage';
 import ShopPage from '@/pages/ShopPage';
 import ProfilePage from '@/pages/ProfilePage';
