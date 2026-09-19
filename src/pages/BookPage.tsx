@@ -1,40 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Scissors, CheckCircle, Loader2 } from 'lucide-react';
+import { 
+  Calendar as CalendarIcon, Scissors, CheckCircle2, 
+  Loader2, AlertCircle, Trash2, PlusCircle, CalendarDays, 
+  ArrowLeft, Clock, History, ChevronDown, ChevronUp
+} from 'lucide-react';
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import type { TabKey } from '@/types';
-
-const ROLE_BARBER_ID = '9edfdd5a-7095-472b-8498-27952e6750b8';
-
-const generateTimeSlots = (startHour: number, startMinute: number, endHour: number, endMinute: number) => {
-  const slots: string[] = [];
-  let current = new Date();
-  current.setHours(startHour, startMinute, 0, 0);
-
-  const end = new Date();
-  end.setHours(endHour, endMinute, 0, 0);
-
-  while (current <= end) {
-    const hours = String(current.getHours()).padStart(2, '0');
-    const minutes = String(current.getMinutes()).padStart(2, '0');
-    slots.push(`${hours}:${minutes}`);
-    current.setMinutes(current.getMinutes() + 30);
-  }
-
-  return slots;
-};
-
-const WEEKDAY_SLOTS = generateTimeSlots(9, 0, 19, 0);
-const SATURDAY_SLOTS = generateTimeSlots(9, 0, 18, 30);
-
-interface Service {
-  id: string;
-  name: string;
-  price: number;
-  category?: string;
-  duration?: number;
-}
+import { syncAppointmentToGoogleCalendar } from '@/lib/googleCalendar';
+import type { Service, TabKey } from '@/types';
 
 interface Barber {
   id: string;
@@ -43,369 +17,468 @@ interface Barber {
 }
 
 interface Appointment {
-  barber_id: string;
-  time_slot: string;
+  id: string;
   date: string;
-  status: string;
+  time_slot: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  service: { name: string; price: number; duration: number };
+  barber: { name: string };
 }
 
 interface BookPageProps {
-  onNavigate?: (tab: TabKey) => void;
-  initialServiceId?: string | null;
-  onClearInitialService?: () => void;
+  onNavigate: (tab: TabKey) => void;
+  preselectedServiceId?: string;
 }
 
-export default function BookPage({
-  onNavigate,
-  initialServiceId,
-  onClearInitialService,
-}: BookPageProps) {
+const AVAILABLE_TIMES = [
+  '09:00', '10:00', '11:00', '13:00', '14:00', 
+  '15:00', '16:00', '17:00', '18:00', '19:00'
+];
+
+export default function BookPage({ preselectedServiceId }: BookPageProps) {
   const { user } = useAuth();
 
+  // Estados de dados
   const [services, setServices] = useState<Service[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('todos');
   const [barbers, setBarbers] = useState<Barber[]>([]);
-  const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  
+  // Estados do formulário de agendamento (Expansível)
+  const [isBookingOpen, setIsBookingOpen] = useState<boolean>(!!preselectedServiceId);
+  const [selectedService, setSelectedService] = useState<string>(preselectedServiceId || '');
+  const [selectedBarber, setSelectedBarber] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedTime, setSelectedTime] = useState<string>('');
+  
+  // Estados de carregamento e feedback
+  const [loadingData, setLoadingData] = useState<boolean>(true);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
-  const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
-
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
-
-  // 1. Carregar Serviços e Barbeiros
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const { data: servicesData } = await supabase.from('services').select('*');
-        if (servicesData) setServices(servicesData);
-
-        const { data: userRolesData } = await supabase
-          .from('user_roles')
-          .select('user_id, profiles!inner(id, name, avatar_url)')
-          .eq('role_id', ROLE_BARBER_ID);
-
-        let list: Barber[] = [];
-
-        if (userRolesData && userRolesData.length > 0) {
-          list = userRolesData.map((item: any) => item.profiles).filter(Boolean);
-        }
-
-        if (list.length === 0) {
-          const { data: profilesBarbers } = await supabase
-            .from('profiles')
-            .select('id, name, avatar_url')
-            .eq('role', 'barbeiro');
-          if (profilesBarbers) list = profilesBarbers;
-        }
-
-        setBarbers(list);
-      } catch (err) {
-        console.error('Erro ao carregar dados:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  // 2. Pré-selecionar Serviço vindo da HomePage
-  useEffect(() => {
-    if (initialServiceId && services.length > 0) {
-      const srv = services.find((s) => s.id === initialServiceId);
-      if (srv) {
-        setSelectedService(srv);
-        if (srv.category) {
-          setActiveCategory(srv.category);
-        }
-      }
-      if (onClearInitialService) onClearInitialService();
-    }
-  }, [initialServiceId, services, onClearInitialService]);
-
-  // 3. Buscar agendamentos existentes da data
-  useEffect(() => {
-    const fetchAppointments = async () => {
-      if (!selectedDate) return;
-      const { data } = await supabase
-        .from('appointments')
-        .select('barber_id, time_slot, status, date')
-        .eq('date', selectedDate)
-        .neq('status', 'cancelled');
-
-      if (data) setExistingAppointments(data);
-    };
-
-    fetchAppointments();
-  }, [selectedDate]);
-
-  const categories = ['todos', ...Array.from(new Set(services.map((s) => s.category).filter(Boolean)))];
-
-  const filteredServices = activeCategory === 'todos'
-    ? services
-    : services.filter((s) => s.category === activeCategory);
-
-  const getDayOfWeek = (dateStr: string) => {
-    return new Date(dateStr + 'T00:00:00').getDay();
-  };
-
-  const isClosedDay = (dateStr: string) => {
-    const day = getDayOfWeek(dateStr);
-    return day === 0 || day === 1;
-  };
-
-  const getTimeSlotsForDate = (dateStr: string) => {
-    const day = getDayOfWeek(dateStr);
-    if (day === 6) return SATURDAY_SLOTS;
-    return WEEKDAY_SLOTS;
-  };
-
-  const isTimeSlotInPast = (timeSlot: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    if (selectedDate !== today) return false;
-
-    const [hours, minutes] = timeSlot.split(':').map(Number);
-    const now = new Date();
-    const slotTime = new Date();
-    slotTime.setHours(hours, minutes, 0, 0);
-
-    return now > slotTime;
-  };
-
-  const isSlotBookedForBarber = (barberId: string, timeSlot: string) => {
-    return existingAppointments.some(
-      (a) => a.barber_id === barberId && a.time_slot === timeSlot
-    );
-  };
-
-  const handleCreateAppointment = async () => {
-    if (!user) {
-      if (onNavigate) onNavigate('profile');
-      return;
-    }
-    if (!selectedService || !selectedBarber || !selectedTimeSlot || !selectedDate) return;
-
-    setSubmitting(true);
+  // Carrega agendamentos, serviços e barbeiros
+  const loadPageData = async () => {
+    setLoadingData(true);
     try {
-      const { error } = await supabase.from('appointments').insert({
-        client_id: user.id,
-        barber_id: selectedBarber.id,
-        service_id: selectedService.id,
-        date: selectedDate,
-        time_slot: selectedTimeSlot,
-        price: selectedService.price,
-        status: 'scheduled',
-      });
+      const { data: servs } = await supabase.from('services').select('*').order('price');
+      if (servs) setServices(servs);
 
-      if (!error) {
-        setSuccess(true);
-      } else {
-        alert('Erro ao realizar agendamento. Tente novamente.');
+      const { data: barbs } = await supabase.from('profiles').select('*').ilike('role', 'barbeiro');
+      if (barbs) setBarbers(barbs);
+
+      if (user) {
+        const { data: apts, error: aptsError } = await supabase
+          .from('appointments')
+          .select('*, service:services(name, price, duration), barber:profiles(name)')
+          .eq('client_id', user.id)
+          .order('date', { ascending: true })
+          .order('time_slot', { ascending: true });
+
+        if (!aptsError && apts) {
+          setAppointments(apts as any);
+        }
       }
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao carregar dados de agendamento:', err);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPageData();
+  }, [user]);
+
+  useEffect(() => {
+    if (preselectedServiceId) {
+      setSelectedService(preselectedServiceId);
+      setIsBookingOpen(true);
+    }
+  }, [preselectedServiceId]);
+
+  // Separação dos status de agendamentos
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const upcomingAppointments = appointments.filter(
+    (a) => a.status === 'scheduled' && a.date >= todayStr
+  );
+  
+  const pastAppointments = appointments.filter(
+    (a) => a.status !== 'scheduled' || a.date < todayStr
+  );
+
+  const nextAppointment = upcomingAppointments[0];
+  const lastCompletedAppointment = pastAppointments.find((a) => a.status === 'completed') || pastAppointments[0];
+
+  // Ação de Criar Agendamento
+  const handleCreateAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!user) {
+      setErrorMessage('Você precisa estar logado para agendar.');
+      return;
+    }
+
+    if (!selectedService || !selectedBarber || !selectedDate || !selectedTime) {
+      setErrorMessage('Por favor, preencha todos os campos do agendamento.');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const { data, error } = await supabase.from('appointments').insert({
+        client_id: user.id,
+        service_id: selectedService,
+        barber_id: selectedBarber,
+        date: selectedDate,
+        time_slot: selectedTime,
+        status: 'scheduled'
+      }).select('*, service:services(name, duration), barber:profiles(name)').single();
+
+      if (error) throw error;
+
+      // --- Integração Preparada com Google Agenda ---
+      if (data) {
+        const serviceObj = services.find(s => s.id === selectedService);
+        const barberObj = barbers.find(b => b.id === selectedBarber);
+        
+        const durationMinutes = serviceObj?.duration || 30;
+        const startISO = `${selectedDate}T${selectedTime}:00-03:00`;
+        
+        // Calcula horário final
+        const startDate = new Date(startISO);
+        const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+
+        await syncAppointmentToGoogleCalendar({
+          summary: `Barbearia: ${serviceObj?.name || 'Agendamento'}`,
+          description: `Cliente: ${user.email} | Barbeiro: ${barberObj?.name || ''}`,
+          startDateTime: startISO,
+          endDateTime: endDate.toISOString(),
+          clientEmail: user.email,
+        });
+      }
+
+      // Sucesso & Limpeza
+      setSuccessMessage('Agendamento realizado com sucesso!');
+      setSelectedService('');
+      setSelectedBarber('');
+      setSelectedDate('');
+      setSelectedTime('');
+      setIsBookingOpen(false);
+
+      // Recarrega os dados para atualizar o topo imediatamente
+      await loadPageData();
+
+      // Rola a página suavemente para o topo
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err: any) {
+      console.error('Erro ao agendar:', err);
+      setErrorMessage(err.message || 'Erro ao realizar agendamento. Tente novamente.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-gold-400 animate-spin" />
-      </div>
-    );
-  }
+  // Ação de Cancelar Agendamento
+  const handleCancelAppointment = async (id: string) => {
+    if (!confirm('Deseja realmente cancelar este agendamento?')) return;
 
-  if (success) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
-        <CheckCircle className="w-16 h-16 text-green-400 mb-4 animate-bounce" />
-        <h2 className="text-xl font-bold text-ink-100 mb-2">Agendamento Confirmado!</h2>
-        <p className="text-sm text-ink-400 mb-6">Seu horário foi reservado com sucesso.</p>
-        <button
-          onClick={() => onNavigate && onNavigate('appointments')}
-          className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm"
-        >
-          Ver Meus Agendamentos
-        </button>
-      </div>
-    );
-  }
+    setCancellingId(id);
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', id);
 
-  const currentSlots = getTimeSlotsForDate(selectedDate);
-  const closed = isClosedDay(selectedDate);
+      if (error) throw error;
+
+      await loadPageData();
+    } catch (err) {
+      console.error('Erro ao cancelar agendamento:', err);
+      alert('Não foi possível cancelar o agendamento.');
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen pb-24 animate-fade-in">
-      <Header title="Novo Agendamento" />
+    <div className="min-h-screen pb-28">
+      <Header title="Agendamento" />
 
-      <main className="px-5 mt-4 space-y-6">
-        {/* SERVIÇOS POR CATEGORIA */}
-        <section>
-          <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
-            <Scissors size={16} className="text-gold-400" /> Escolha o Serviço
-          </h3>
-
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none mb-3">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat!)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold capitalize whitespace-nowrap transition-all ${
-                  activeCategory === cat
-                    ? 'bg-gold-500 text-ink-950 font-bold'
-                    : 'bg-ink-850 text-ink-300 border border-white/5 hover:border-white/20'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+      <main className="px-5 mt-3 space-y-6">
+        {/* Banner de Feedback de Sucesso */}
+        {successMessage && (
+          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between animate-fade-in shadow-lg">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 size={18} className="shrink-0" />
+              <span className="font-medium">{successMessage}</span>
+            </div>
+            <button 
+              onClick={() => setSuccessMessage('')}
+              className="text-xs text-emerald-400/60 hover:text-emerald-400"
+            >
+              ✕
+            </button>
           </div>
+        )}
 
-          <div className="grid grid-cols-1 gap-2.5 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
-            {filteredServices.map((srv) => (
-              <div
-                key={srv.id}
-                onClick={() => setSelectedService(srv)}
-                className={`p-3.5 rounded-xl border cursor-pointer flex items-center justify-between transition-all ${
-                  selectedService?.id === srv.id
-                    ? 'border-gold-400 bg-gold-500/10'
-                    : 'border-white/5 bg-ink-850 hover:border-white/20'
-                }`}
-              >
-                <div>
-                  <p className="text-sm font-semibold text-ink-100">{srv.name}</p>
-                  <p className="text-xs text-gold-400 font-bold mt-0.5">R$ {srv.price}</p>
-                </div>
-                <div
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center ${
-                    selectedService?.id === srv.id ? 'border-gold-400 bg-gold-400' : 'border-ink-500'
-                  }`}
-                >
-                  {selectedService?.id === srv.id && <div className="w-2 h-2 rounded-full bg-ink-950" />}
-                </div>
-              </div>
-            ))}
+        {/* Banner de Feedback de Erro */}
+        {errorMessage && (
+          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2.5 animate-fade-in">
+            <AlertCircle size={18} className="shrink-0" />
+            <span>{errorMessage}</span>
           </div>
-        </section>
+        )}
 
-        {/* DATA */}
-        <section>
-          <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
-            <Calendar size={16} className="text-gold-400" /> Escolha a Data
-          </h3>
-          <input
-            type="date"
-            min={new Date().toISOString().split('T')[0]}
-            value={selectedDate}
-            onChange={(e) => {
-              setSelectedDate(e.target.value);
-              setSelectedTimeSlot(null);
-            }}
-            className="w-full bg-ink-850 border border-white/10 rounded-xl p-3 text-sm text-ink-100 focus:outline-none focus:border-gold-400"
-          />
-          {closed && (
-            <p className="text-xs text-red-400 mt-2 font-medium">
-              Não funcionamos aos domingos e segundas-feiras. Selecione outra data.
-            </p>
-          )}
-        </section>
+        {loadingData ? (
+          <div className="py-16 flex flex-col items-center justify-center gap-3 text-ink-300">
+            <Loader2 size={28} className="animate-spin text-gold-400" />
+            <span className="text-xs font-medium">Sincronizando agendamentos...</span>
+          </div>
+        ) : (
+          <>
+            {/* 1. TOPO DA TELA: PRÓXIMO AGENDAMENTO DESTAQUE */}
+            {nextAppointment ? (
+              <section className="animate-slide-up">
+                <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase mb-2.5 flex items-center gap-1.5">
+                  <CalendarDays size={14} /> Próximo Agendamento
+                </h3>
+                <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/40 shadow-xl relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-extrabold tracking-widest uppercase px-2.5 py-1 rounded-full gold-gradient text-ink-950">
+                      Confirmado
+                    </span>
+                    <span className="text-xs text-ink-200 font-semibold flex items-center gap-1.5">
+                      <Clock size={13} className="text-gold-400" />
+                      {nextAppointment.date} às {nextAppointment.time_slot}
+                    </span>
+                  </div>
 
-        {/* BARBEIROS */}
-        <section>
-          <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
-            <User size={16} className="text-gold-400" /> Escolha o Barbeiro
-          </h3>
-          <div className="grid grid-cols-2 gap-2.5">
-            {barbers.map((barber) => {
-              const isSelected = selectedBarber?.id === barber.id;
-              return (
-                <div
-                  key={barber.id}
-                  onClick={() => setSelectedBarber(isSelected ? null : barber)}
-                  className={`p-3 rounded-xl border cursor-pointer flex items-center gap-3 transition-all ${
-                    isSelected
-                      ? 'border-gold-400 bg-gold-500/10'
-                      : 'border-white/5 bg-ink-850 hover:border-white/20'
-                  }`}
-                >
-                  {barber.avatar_url ? (
-                    <img
-                      src={barber.avatar_url}
-                      alt={barber.name}
-                      className="w-9 h-9 rounded-full object-cover border border-gold-400/30"
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-ink-700 flex items-center justify-center text-xs font-bold text-gold-400">
-                      {barber.name.charAt(0)}
+                  <div className="flex items-center gap-4 my-3">
+                    <div className="h-12 w-12 rounded-xl gold-gradient flex items-center justify-center text-ink-950 shrink-0 shadow-md">
+                      <Scissors size={22} />
                     </div>
-                  )}
-                  <div className="overflow-hidden">
-                    <p className="text-xs font-bold text-ink-100 truncate">{barber.name}</p>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-base font-bold text-ink-100 truncate">
+                        {nextAppointment.service?.name}
+                      </h4>
+                      <p className="text-xs text-ink-300">
+                        Com <span className="text-gold-400 font-medium">{nextAppointment.barber?.name}</span>
+                      </p>
+                    </div>
+                    <span className="font-display text-lg gold-text font-bold">
+                      R${nextAppointment.service?.price}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-white/10 flex justify-end">
+                    <button
+                      onClick={() => handleCancelAppointment(nextAppointment.id)}
+                      disabled={cancellingId === nextAppointment.id}
+                      className="text-xs font-semibold text-red-400 hover:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 active:scale-95 transition-all"
+                    >
+                      {cancellingId === nextAppointment.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={13} />
+                      )}
+                      Cancelar
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </section>
+              </section>
+            ) : (
+              <div className="p-5 rounded-2xl bg-ink-900/60 border border-white/5 text-center space-y-2">
+                <CalendarIcon size={28} className="mx-auto text-ink-400" />
+                <p className="text-xs font-semibold text-ink-200">Você não possui agendamentos futuros.</p>
+                <p className="text-[11px] text-ink-400">Agende um novo serviço abaixo a qualquer momento.</p>
+              </div>
+            )}
 
-        {/* HORÁRIOS */}
-        <section>
-          <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
-            <Clock size={16} className="text-gold-400" /> Escolha o Horário
-          </h3>
-          <div className="grid grid-cols-4 gap-2">
-            {currentSlots.map((slot) => {
-              const inPast = isTimeSlotInPast(slot);
-              const isOccupied =
-                selectedBarber && isSlotBookedForBarber(selectedBarber.id, slot);
-              const isDisabled = inPast || !!isOccupied || closed;
-              const isSelected = selectedTimeSlot === slot;
+            {/* LISTA DE OUTROS AGENDAMENTOS FUTUROS (Caso haja mais de um) */}
+            {upcomingAppointments.length > 1 && (
+              <section className="space-y-2">
+                <h4 className="text-xs font-bold text-ink-300 uppercase tracking-wider">
+                  Outros Serviços Agendados ({upcomingAppointments.length - 1})
+                </h4>
+                {upcomingAppointments.slice(1).map((apt) => (
+                  <div key={apt.id} className="card p-3.5 flex items-center justify-between border-white/5">
+                    <div className="flex items-center gap-3">
+                      <Scissors size={16} className="text-gold-400" />
+                      <div>
+                        <p className="text-xs font-semibold text-ink-100">{apt.service?.name}</p>
+                        <p className="text-[10px] text-ink-400">{apt.date} às {apt.time_slot} • {apt.barber?.name}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleCancelAppointment(apt.id)}
+                      className="text-red-400 p-1.5 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Cancelar"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
 
-              return (
+            {/* ÚLTIMO SERVIÇO REALIZADO */}
+            {lastCompletedAppointment && (
+              <section className="pt-1">
+                <h4 className="text-xs font-bold text-ink-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <History size={13} /> Último Serviço Realizado
+                </h4>
+                <div className="p-3.5 rounded-xl bg-ink-900/50 border border-white/5 flex items-center justify-between opacity-80">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center text-ink-300">
+                      <Scissors size={14} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-ink-200">{lastCompletedAppointment.service?.name}</p>
+                      <p className="text-[10px] text-ink-400">{lastCompletedAppointment.date} • {lastCompletedAppointment.barber?.name}</p>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    lastCompletedAppointment.status === 'completed' 
+                      ? 'bg-emerald-500/10 text-emerald-400' 
+                      : 'bg-red-500/10 text-red-400'
+                  }`}>
+                    {lastCompletedAppointment.status === 'completed' ? 'Concluído' : 'Cancelado'}
+                  </span>
+                </div>
+              </section>
+            )}
+
+            {/* 2. PARTE INFERIOR: FORMULÁRIO DE AGENDAMENTO EXPANSÍVEL */}
+            <section className="pt-2">
+              <div className="card border-gold-500/30 overflow-hidden transition-all">
+                {/* Cabeçalho do Card Expansível */}
                 <button
-                  key={slot}
-                  disabled={isDisabled}
-                  onClick={() => setSelectedTimeSlot(isSelected ? null : slot)}
-                  className={`py-2 px-1 rounded-xl border text-xs font-semibold text-center transition-all ${
-                    isDisabled
-                      ? 'opacity-30 line-through border-ink-800 bg-ink-900 text-ink-600 cursor-not-allowed'
-                      : isSelected
-                      ? 'border-gold-400 bg-gold-500 text-ink-950 font-bold'
-                      : 'border-white/5 bg-ink-850 text-ink-200 hover:border-white/20'
-                  }`}
+                  onClick={() => setIsBookingOpen(!isBookingOpen)}
+                  className="w-full p-4 flex items-center justify-between bg-gradient-to-r from-ink-900 to-ink-950 text-left"
                 >
-                  {slot}
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg gold-gradient flex items-center justify-center text-ink-950 shrink-0">
+                      <PlusCircle size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-ink-100">Agendar Serviço</h3>
+                      <p className="text-[11px] text-ink-400">Escolha o serviço, barbeiro, data e horário</p>
+                    </div>
+                  </div>
+                  {isBookingOpen ? (
+                    <ChevronUp size={18} className="text-gold-400" />
+                  ) : (
+                    <ChevronDown size={18} className="text-ink-400" />
+                  )}
                 </button>
-              );
-            })}
-          </div>
-        </section>
 
-        {/* CONFIRMAÇÃO */}
-        <div className="pt-4 border-t border-white/10">
-          <button
-            disabled={
-              !selectedService ||
-              !selectedBarber ||
-              !selectedTimeSlot ||
-              closed ||
-              submitting
-            }
-            onClick={handleCreateAppointment}
-            className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-transform"
-          >
-            {submitting ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Agendamento'}
-          </button>
-        </div>
+                {/* Conteúdo do Formulário */}
+                {isBookingOpen && (
+                  <div className="p-5 border-t border-white/5 animate-fade-in">
+                    <form onSubmit={handleCreateAppointment} className="space-y-4">
+                      {/* Selecionar Serviço */}
+                      <div>
+                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
+                          1. Escolha o Serviço
+                        </label>
+                        <select
+                          value={selectedService}
+                          onChange={(e) => setSelectedService(e.target.value)}
+                          required
+                          className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
+                        >
+                          <option value="">Selecione um serviço...</option>
+                          {services.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} - R${s.price} ({s.duration} min)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Selecionar Barbeiro */}
+                      <div>
+                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
+                          2. Escolha o Barbeiro
+                        </label>
+                        <select
+                          value={selectedBarber}
+                          onChange={(e) => setSelectedBarber(e.target.value)}
+                          required
+                          className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
+                        >
+                          <option value="">Selecione o profissional...</option>
+                          {barbers.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Selecionar Data */}
+                      <div>
+                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
+                          3. Selecione a Data
+                        </label>
+                        <input
+                          type="date"
+                          min={todayStr}
+                          value={selectedDate}
+                          onChange={(e) => setSelectedDate(e.target.value)}
+                          required
+                          className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Selecionar Horário */}
+                      <div>
+                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
+                          4. Escolha o Horário
+                        </label>
+                        <div className="grid grid-cols-5 gap-2">
+                          {AVAILABLE_TIMES.map((time) => (
+                            <button
+                              type="button"
+                              key={time}
+                              onClick={() => setSelectedTime(time)}
+                              className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
+                                selectedTime === time
+                                  ? 'gold-gradient text-ink-950 border-gold-500 shadow-sm'
+                                  : 'bg-ink-900 border-white/5 text-ink-300 hover:border-gold-500/30'
+                              }`}
+                            >
+                              {time}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Confirmar */}
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform mt-3"
+                      >
+                        {submitting ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          'Finalizar e Agendar Serviço'
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
   );
