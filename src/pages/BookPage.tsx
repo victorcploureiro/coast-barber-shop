@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Scissors, CheckCircle2, Loader2, AlertCircle, 
-  Trash2, CalendarDays, Clock, History, Check, UserCheck,
-  ChevronDown, ChevronUp
+  Trash2, CalendarDays, Clock, History, Check, UserCheck
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,9 +42,6 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   
-  // Categorias Abertas (Set com os nomes das categorias abertas)
-  const [openCategories, setOpenCategories] = useState<string[]>([]);
-
   // Seleções do Agendamento
   const [selectedService, setSelectedService] = useState<string>(preselectedServiceId || '');
   const [selectedBarber, setSelectedBarber] = useState<string>('');
@@ -64,18 +60,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     setLoadingData(true);
     try {
       const { data: servs } = await supabase.from('services').select('*').order('price');
-      if (servs) {
-        setServices(servs);
-        
-        // Se houver um serviço selecionado via prop/home, abre a categoria dele automaticamente
-        if (preselectedServiceId) {
-          const targetService = servs.find(s => s.id === preselectedServiceId);
-          if (targetService) {
-            const categoryName = targetService.category || 'Geral';
-            setOpenCategories([categoryName]);
-          }
-        }
-      }
+      if (servs) setServices(servs);
 
       const { data: barbs } = await supabase.from('profiles').select('*').ilike('role', 'barbeiro');
       if (barbs) setBarbers(barbs);
@@ -103,34 +88,12 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     loadPageData();
   }, [user]);
 
-  // Atualiza seleção e abre categoria ao mudar a prop vinda da Home
+  // Atualiza a seleção quando a prop mudar
   useEffect(() => {
     if (preselectedServiceId) {
       setSelectedService(preselectedServiceId);
-      const targetService = services.find(s => s.id === preselectedServiceId);
-      if (targetService) {
-        const categoryName = targetService.category || 'Geral';
-        setOpenCategories(prev => prev.includes(categoryName) ? prev : [...prev, categoryName]);
-      }
     }
-  }, [preselectedServiceId, services]);
-
-  // Alterna abertura de categorias
-  const toggleCategory = (categoryName: string) => {
-    setOpenCategories(prev =>
-      prev.includes(categoryName)
-        ? prev.filter(c => c !== categoryName)
-        : [...prev, categoryName]
-    );
-  };
-
-  // Agrupamento de serviços por categoria
-  const groupedServices = services.reduce((acc, service) => {
-    const category = service.category || 'Geral';
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(service);
-    return acc;
-  }, {} as Record<string, Service[]>);
+  }, [preselectedServiceId]);
 
   // Separação de agendamentos
   const now = new Date();
@@ -261,7 +224,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
           </div>
         ) : (
           <>
-            {/* 1. AGENDAMENTO ATIVO */}
+            {/* 1. AGENDAMENTO ATIVO (Só aparece se houver) */}
             {nextAppointment && (
               <section className="animate-slide-up space-y-3">
                 <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase flex items-center gap-1.5">
@@ -313,83 +276,58 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
               </section>
             )}
 
-            {/* 2. FORMULÁRIO DE AGENDAMENTO COM CATEGORIAS */}
+            {/* 2. LISTA DE SERVIÇOS E FORMULÁRIO DIRETO */}
             <section className="space-y-4">
               <h3 className="text-xs font-bold text-ink-300 tracking-wider uppercase">
                 Novo Agendamento
               </h3>
 
               <form onSubmit={handleCreateAppointment} className="space-y-5">
-                {/* Categorias de Serviços */}
+                {/* Passo 1: Lista Visual de Serviços */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gold-400">
                     1. Selecione o Serviço
                   </label>
-                  
-                  <div className="space-y-3">
-                    {Object.entries(groupedServices).map(([category, items]) => {
-                      const isOpen = openCategories.includes(category);
+                  <div className="space-y-2">
+                    {services.map((service) => {
+                      const isSelected = selectedService === service.id;
                       return (
-                        <div key={category} className="card border-white/10 overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => toggleCategory(category)}
-                            className="w-full p-3.5 flex items-center justify-between bg-ink-900/80 hover:bg-ink-900 transition-colors text-left"
-                          >
-                            <span className="text-xs font-bold text-ink-100">{category}</span>
-                            {isOpen ? (
-                              <ChevronUp size={16} className="text-gold-400" />
-                            ) : (
-                              <ChevronDown size={16} className="text-ink-400" />
-                            )}
-                          </button>
-
-                          {isOpen && (
-                            <div className="p-3 border-t border-white/5 space-y-2 bg-ink-950/40 animate-fade-in">
-                              {items.map((service) => {
-                                const isSelected = selectedService === service.id;
-                                return (
-                                  <div
-                                    key={service.id}
-                                    onClick={() => setSelectedService(service.id)}
-                                    className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                                      isSelected
-                                        ? 'bg-gold-500/10 border-gold-500 text-ink-100 shadow-md'
-                                        : 'bg-ink-900/60 border-white/5 hover:border-white/20 text-ink-200'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                        isSelected ? 'gold-gradient text-ink-950' : 'bg-white/5 text-ink-400'
-                                      }`}>
-                                        <Scissors size={15} />
-                                      </div>
-                                      <div>
-                                        <p className="text-xs font-bold text-ink-100">{service.name}</p>
-                                        <p className="text-[10px] text-ink-400">{service.duration} min</p>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs font-bold gold-text">R${service.price}</span>
-                                      <div className={`h-5 w-5 rounded-full border flex items-center justify-center ${
-                                        isSelected ? 'border-gold-400 bg-gold-400 text-ink-950' : 'border-white/20'
-                                      }`}>
-                                        {isSelected && <Check size={12} strokeWidth={3} />}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                        <div
+                          key={service.id}
+                          onClick={() => setSelectedService(service.id)}
+                          className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-gold-500/10 border-gold-500 text-ink-100 shadow-md'
+                              : 'bg-ink-900/60 border-white/5 hover:border-white/20 text-ink-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              isSelected ? 'gold-gradient text-ink-950' : 'bg-white/5 text-ink-400'
+                            }`}>
+                              <Scissors size={16} />
                             </div>
-                          )}
+                            <div>
+                              <p className="text-xs font-bold text-ink-100">{service.name}</p>
+                              <p className="text-[10px] text-ink-400">{service.duration} min</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold gold-text">R${service.price}</span>
+                            <div className={`h-5 w-5 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'border-gold-400 bg-gold-400 text-ink-950' : 'border-white/20'
+                            }`}>
+                              {isSelected && <Check size={12} strokeWidth={3} />}
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* Seleção de Barbeiro */}
+                {/* Passo 2: Seleção de Barbeiro */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gold-400">
                     2. Escolha o Profissional
@@ -416,7 +354,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                   </div>
                 </div>
 
-                {/* Data e Horário */}
+                {/* Passo 3: Data e Horário */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-gold-400">
