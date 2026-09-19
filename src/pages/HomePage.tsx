@@ -237,7 +237,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
 
         const { data: apts, error } = await supabase
           .from('appointments')
-          .select('*, service:services(name), barber:profiles!appointments_barber_id_fkey(name)')
+          .select('*, service:services(name), barber:profiles(name)')
           .eq('client_id', user.id)
           .eq('status', 'scheduled')
           .gte('date', localTodayStr)
