@@ -7,7 +7,6 @@ import type { TabKey } from '@/types';
 
 const ROLE_BARBER_ID = '9edfdd5a-7095-472b-8498-27952e6750b8';
 
-// Função ajustada para incluir o horário limite exatamente (ex: 19:00 e 18:30)
 const generateTimeSlots = (startHour: number, startMinute: number, endHour: number, endMinute: number) => {
   const slots: string[] = [];
   let current = new Date();
@@ -26,10 +25,7 @@ const generateTimeSlots = (startHour: number, startMinute: number, endHour: numb
   return slots;
 };
 
-// Terça a Sexta: 09:00 até 19:00
 const WEEKDAY_SLOTS = generateTimeSlots(9, 0, 19, 0);
-
-// Sábado: 09:00 até 18:30
 const SATURDAY_SLOTS = generateTimeSlots(9, 0, 18, 30);
 
 interface Service {
@@ -54,15 +50,15 @@ interface Appointment {
 }
 
 interface BookPageProps {
-  onNavigate?: (tab: TabKey, barberId?: string) => void;
-  initialBarberId?: string | null;
-  onClearInitialBarber?: () => void;
+  onNavigate?: (tab: TabKey) => void;
+  initialServiceId?: string | null;
+  onClearInitialService?: () => void;
 }
 
 export default function BookPage({
   onNavigate,
-  initialBarberId,
-  onClearInitialBarber,
+  initialServiceId,
+  onClearInitialService,
 }: BookPageProps) {
   const { user } = useAuth();
 
@@ -120,14 +116,19 @@ export default function BookPage({
     fetchData();
   }, []);
 
-  // 2. Aplicar barbeiro vindo da Home
+  // 2. Pré-selecionar Serviço vindo da HomePage
   useEffect(() => {
-    if (initialBarberId && barbers.length > 0) {
-      const barber = barbers.find((b) => b.id === initialBarberId);
-      if (barber) setSelectedBarber(barber);
-      if (onClearInitialBarber) onClearInitialBarber();
+    if (initialServiceId && services.length > 0) {
+      const srv = services.find((s) => s.id === initialServiceId);
+      if (srv) {
+        setSelectedService(srv);
+        if (srv.category) {
+          setActiveCategory(srv.category);
+        }
+      }
+      if (onClearInitialService) onClearInitialService();
     }
-  }, [initialBarberId, barbers, onClearInitialBarber]);
+  }, [initialServiceId, services, onClearInitialService]);
 
   // 3. Buscar agendamentos existentes da data
   useEffect(() => {
@@ -145,14 +146,12 @@ export default function BookPage({
     fetchAppointments();
   }, [selectedDate]);
 
-  // Categorias únicas
   const categories = ['todos', ...Array.from(new Set(services.map((s) => s.category).filter(Boolean)))];
 
   const filteredServices = activeCategory === 'todos'
     ? services
     : services.filter((s) => s.category === activeCategory);
 
-  // Verificação de dias sem funcionamento (Domingo = 0, Segunda = 1)
   const getDayOfWeek = (dateStr: string) => {
     return new Date(dateStr + 'T00:00:00').getDay();
   };
@@ -162,14 +161,12 @@ export default function BookPage({
     return day === 0 || day === 1;
   };
 
-  // Retorna a grade de horários
   const getTimeSlotsForDate = (dateStr: string) => {
     const day = getDayOfWeek(dateStr);
-    if (day === 6) return SATURDAY_SLOTS; // Sábado
-    return WEEKDAY_SLOTS; // Terça a Sexta
+    if (day === 6) return SATURDAY_SLOTS;
+    return WEEKDAY_SLOTS;
   };
 
-  // Verifica se o horário já passou na data de hoje
   const isTimeSlotInPast = (timeSlot: string) => {
     const today = new Date().toISOString().split('T')[0];
     if (selectedDate !== today) return false;
@@ -182,7 +179,6 @@ export default function BookPage({
     return now > slotTime;
   };
 
-  // Verifica se o barbeiro já está ocupado no horário
   const isSlotBookedForBarber = (barberId: string, timeSlot: string) => {
     return existingAppointments.some(
       (a) => a.barber_id === barberId && a.time_slot === timeSlot
@@ -252,7 +248,7 @@ export default function BookPage({
       <Header title="Novo Agendamento" />
 
       <main className="px-5 mt-4 space-y-6">
-        {/* SERVIÇOS AGRUPADOS POR CATEGORIA */}
+        {/* SERVIÇOS POR CATEGORIA */}
         <section>
           <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
             <Scissors size={16} className="text-gold-400" /> Escolha o Serviço
@@ -323,7 +319,7 @@ export default function BookPage({
           )}
         </section>
 
-        {/* BARBEIROS (SEM ESTRELAS / RATING) */}
+        {/* BARBEIROS */}
         <section>
           <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
             <User size={16} className="text-gold-400" /> Escolha o Barbeiro
@@ -361,7 +357,7 @@ export default function BookPage({
           </div>
         </section>
 
-        {/* HORÁRIOS DE 30 EM 30 MINUTOS */}
+        {/* HORÁRIOS */}
         <section>
           <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
             <Clock size={16} className="text-gold-400" /> Escolha o Horário
