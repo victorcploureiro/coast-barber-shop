@@ -7,9 +7,30 @@ import type { TabKey } from '@/types';
 
 const ROLE_BARBER_ID = '9edfdd5a-7095-472b-8498-27952e6750b8';
 
-const TIME_SLOTS = [
-  '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
-];
+// Função ajustada para incluir o horário limite exatamente (ex: 19:00 e 18:30)
+const generateTimeSlots = (startHour: number, startMinute: number, endHour: number, endMinute: number) => {
+  const slots: string[] = [];
+  let current = new Date();
+  current.setHours(startHour, startMinute, 0, 0);
+
+  const end = new Date();
+  end.setHours(endHour, endMinute, 0, 0);
+
+  while (current <= end) {
+    const hours = String(current.getHours()).padStart(2, '0');
+    const minutes = String(current.getMinutes()).padStart(2, '0');
+    slots.push(`${hours}:${minutes}`);
+    current.setMinutes(current.getMinutes() + 30);
+  }
+
+  return slots;
+};
+
+// Terça a Sexta: 09:00 até 19:00
+const WEEKDAY_SLOTS = generateTimeSlots(9, 0, 19, 0);
+
+// Sábado: 09:00 até 18:30
+const SATURDAY_SLOTS = generateTimeSlots(9, 0, 18, 30);
 
 interface Service {
   id: string;
@@ -23,7 +44,6 @@ interface Barber {
   id: string;
   name: string;
   avatar_url?: string;
-  rating?: number;
 }
 
 interface Appointment {
@@ -62,19 +82,17 @@ export default function BookPage({
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // 1. Carregar Serviços e Barbeiros com Fallback duplo
+  // 1. Carregar Serviços e Barbeiros
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Serviços
         const { data: servicesData } = await supabase.from('services').select('*');
         if (servicesData) setServices(servicesData);
 
-        // Barbeiros: Tenta via user_roles primeiro
         const { data: userRolesData } = await supabase
           .from('user_roles')
-          .select('user_id, profiles!inner(id, name, avatar_url, rating)')
+          .select('user_id, profiles!inner(id, name, avatar_url)')
           .eq('role_id', ROLE_BARBER_ID);
 
         let list: Barber[] = [];
@@ -83,11 +101,10 @@ export default function BookPage({
           list = userRolesData.map((item: any) => item.profiles).filter(Boolean);
         }
 
-        // Fallback: se não trouxer pela user_roles, busca direto por role = 'barbeiro' em profiles
         if (list.length === 0) {
           const { data: profilesBarbers } = await supabase
             .from('profiles')
-            .select('id, name, avatar_url, rating')
+            .select('id, name, avatar_url')
             .eq('role', 'barbeiro');
           if (profilesBarbers) list = profilesBarbers;
         }
@@ -103,7 +120,7 @@ export default function BookPage({
     fetchData();
   }, []);
 
-  // 2. Aplicar barbeiro pré-selecionado vindo da Home
+  // 2. Aplicar barbeiro vindo da Home
   useEffect(() => {
     if (initialBarberId && barbers.length > 0) {
       const barber = barbers.find((b) => b.id === initialBarberId);
@@ -128,19 +145,31 @@ export default function BookPage({
     fetchAppointments();
   }, [selectedDate]);
 
-  // Obter categorias únicas dos serviços
+  // Categorias únicas
   const categories = ['todos', ...Array.from(new Set(services.map((s) => s.category).filter(Boolean)))];
 
   const filteredServices = activeCategory === 'todos'
     ? services
     : services.filter((s) => s.category === activeCategory);
 
-  // Verificação de regras de horários (dia atual, horários passados e domingos)
-  const isDateSunday = (dateStr: string) => {
-    const day = new Date(dateStr + 'T00:00:00').getDay();
-    return day === 0; // 0 = Domingo
+  // Verificação de dias sem funcionamento (Domingo = 0, Segunda = 1)
+  const getDayOfWeek = (dateStr: string) => {
+    return new Date(dateStr + 'T00:00:00').getDay();
   };
 
+  const isClosedDay = (dateStr: string) => {
+    const day = getDayOfWeek(dateStr);
+    return day === 0 || day === 1;
+  };
+
+  // Retorna a grade de horários
+  const getTimeSlotsForDate = (dateStr: string) => {
+    const day = getDayOfWeek(dateStr);
+    if (day === 6) return SATURDAY_SLOTS; // Sábado
+    return WEEKDAY_SLOTS; // Terça a Sexta
+  };
+
+  // Verifica se o horário já passou na data de hoje
   const isTimeSlotInPast = (timeSlot: string) => {
     const today = new Date().toISOString().split('T')[0];
     if (selectedDate !== today) return false;
@@ -153,6 +182,7 @@ export default function BookPage({
     return now > slotTime;
   };
 
+  // Verifica se o barbeiro já está ocupado no horário
   const isSlotBookedForBarber = (barberId: string, timeSlot: string) => {
     return existingAppointments.some(
       (a) => a.barber_id === barberId && a.time_slot === timeSlot
@@ -214,18 +244,20 @@ export default function BookPage({
     );
   }
 
+  const currentSlots = getTimeSlotsForDate(selectedDate);
+  const closed = isClosedDay(selectedDate);
+
   return (
     <div className="min-h-screen pb-24 animate-fade-in">
       <Header title="Novo Agendamento" />
 
       <main className="px-5 mt-4 space-y-6">
-        {/* SERVIÇOS COM CATEGORIAS */}
+        {/* SERVIÇOS AGRUPADOS POR CATEGORIA */}
         <section>
           <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
             <Scissors size={16} className="text-gold-400" /> Escolha o Serviço
           </h3>
 
-          {/* Filtros por Categoria */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none mb-3">
             {categories.map((cat) => (
               <button
@@ -242,7 +274,6 @@ export default function BookPage({
             ))}
           </div>
 
-          {/* Lista de Serviços */}
           <div className="grid grid-cols-1 gap-2.5 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
             {filteredServices.map((srv) => (
               <div
@@ -285,14 +316,14 @@ export default function BookPage({
             }}
             className="w-full bg-ink-850 border border-white/10 rounded-xl p-3 text-sm text-ink-100 focus:outline-none focus:border-gold-400"
           />
-          {isDateSunday(selectedDate) && (
+          {closed && (
             <p className="text-xs text-red-400 mt-2 font-medium">
-              Não funcionamos aos domingos. Selecione outra data.
+              Não funcionamos aos domingos e segundas-feiras. Selecione outra data.
             </p>
           )}
         </section>
 
-        {/* BARBEIROS */}
+        {/* BARBEIROS (SEM ESTRELAS / RATING) */}
         <section>
           <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
             <User size={16} className="text-gold-400" /> Escolha o Barbeiro
@@ -323,9 +354,6 @@ export default function BookPage({
                   )}
                   <div className="overflow-hidden">
                     <p className="text-xs font-bold text-ink-100 truncate">{barber.name}</p>
-                    <p className="text-[10px] text-gold-400 font-semibold">
-                      ★ {barber.rating || 5.0}
-                    </p>
                   </div>
                 </div>
               );
@@ -333,18 +361,17 @@ export default function BookPage({
           </div>
         </section>
 
-        {/* HORÁRIOS */}
+        {/* HORÁRIOS DE 30 EM 30 MINUTOS */}
         <section>
           <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
             <Clock size={16} className="text-gold-400" /> Escolha o Horário
           </h3>
-          <div className="grid grid-cols-3 gap-2">
-            {TIME_SLOTS.map((slot) => {
+          <div className="grid grid-cols-4 gap-2">
+            {currentSlots.map((slot) => {
               const inPast = isTimeSlotInPast(slot);
               const isOccupied =
                 selectedBarber && isSlotBookedForBarber(selectedBarber.id, slot);
-              const isSunday = isDateSunday(selectedDate);
-              const isDisabled = inPast || !!isOccupied || isSunday;
+              const isDisabled = inPast || !!isOccupied || closed;
               const isSelected = selectedTimeSlot === slot;
 
               return (
@@ -352,7 +379,7 @@ export default function BookPage({
                   key={slot}
                   disabled={isDisabled}
                   onClick={() => setSelectedTimeSlot(isSelected ? null : slot)}
-                  className={`py-2.5 px-2 rounded-xl border text-xs font-semibold text-center transition-all ${
+                  className={`py-2 px-1 rounded-xl border text-xs font-semibold text-center transition-all ${
                     isDisabled
                       ? 'opacity-30 line-through border-ink-800 bg-ink-900 text-ink-600 cursor-not-allowed'
                       : isSelected
@@ -367,14 +394,14 @@ export default function BookPage({
           </div>
         </section>
 
-        {/* BOTÃO CONFIRMAR */}
+        {/* CONFIRMAÇÃO */}
         <div className="pt-4 border-t border-white/10">
           <button
             disabled={
               !selectedService ||
               !selectedBarber ||
               !selectedTimeSlot ||
-              isDateSunday(selectedDate) ||
+              closed ||
               submitting
             }
             onClick={handleCreateAppointment}
