@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { 
-  Star, Clock, TrendingUp, ChevronRight, Scissors, Sparkles, 
+  Heart, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
   Flame, Palette, Eye, Crown, Calendar
 } from 'lucide-react';
 import Header from '@/components/Header';
@@ -26,6 +26,7 @@ interface Service {
   price: number;
   duration?: number;
   icon?: string;
+  category?: string;
 }
 
 interface HomePageProps {
@@ -38,6 +39,12 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
   const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
+  
+  // Estado para controlar quais categorias de serviço estão abertas/fechadas (todas iniciam fechadas)
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+
+  // Estado local para gerenciar likes dos barbeiros
+  const [likes, setLikes] = useState<Record<string, { count: number; liked: boolean }>>({});
 
   // 1. Buscar barbeiros do Supabase
   useEffect(() => {
@@ -61,6 +68,13 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             specialties: []
           }));
           setDbBarbers(mapped);
+
+          // Inicializar estado dos likes
+          const initialLikes: Record<string, { count: number; liked: boolean }> = {};
+          mapped.forEach((b) => {
+            initialLikes[b.id] = { count: b.reviews || 0, liked: false };
+          });
+          setLikes(initialLikes);
         }
       } catch (err) {
         console.error('Erro ao buscar barbeiros:', err);
@@ -135,6 +149,37 @@ export default function HomePage({ onNavigate }: HomePageProps) {
 
     fetchUserDataAndAppointment();
   }, [user]);
+
+  // Alternar estado de cada dropdown de categoria de serviços
+  const toggleCategory = (categoryName: string) => {
+    setOpenCategories((prev) => ({
+      ...prev,
+      [categoryName]: !prev[categoryName],
+    }));
+  };
+
+  // Alternar botão de curtida do barbeiro
+  const toggleLike = (barberId: string) => {
+    setLikes((prev) => {
+      const current = prev[barberId] || { count: 0, liked: false };
+      const isLiked = current.liked;
+      return {
+        ...prev,
+        [barberId]: {
+          count: isLiked ? current.count - 1 : current.count + 1,
+          liked: !isLiked,
+        },
+      };
+    });
+  };
+
+  // Agrupar serviços por categoria
+  const groupedServices = dbServices.reduce<Record<string, Service[]>>((acc, service) => {
+    const category = service.category || 'Outros Serviços';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(service);
+    return acc;
+  }, {});
 
   return (
     <div className="min-h-screen pb-24">
@@ -213,69 +258,113 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         ))}
       </section>
 
-      {/* Serviços do Banco de Dados */}
+      {/* Serviços (Separados por Categoria em Dropdown / Accordion Fechados) */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
           <button onClick={() => onNavigate('book')} className="text-xs text-gold-400 font-medium flex items-center gap-1">
-            Ver todos <ChevronRight size={14} />
+            Agendar <ChevronRight size={14} />
           </button>
         </div>
-        <div className="space-y-2.5">
-          {dbServices.slice(0, 4).map((service) => {
-            const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
+
+        <div className="space-y-3">
+          {Object.entries(groupedServices).map(([category, items]) => {
+            const isOpen = !!openCategories[category];
             return (
-              <div 
-                key={service.id} 
-                onClick={() => onNavigate('book', service.id)}
-                className="card card-hover p-4 flex items-center gap-4 cursor-pointer"
-              >
-                <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-                  <Icon size={22} className="text-gold-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-semibold text-ink-100">{service.name}</h4>
-                  <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description || ''}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-ink-200 flex items-center gap-1">
-                      <Clock size={11} /> {service.duration || 30} min
+              <div key={category} className="card overflow-hidden">
+                {/* Header da Categoria (Botão de Dropdown) */}
+                <button
+                  onClick={() => toggleCategory(category)}
+                  className="w-full p-4 flex items-center justify-between text-left hover:bg-ink-800/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-ink-100">{category}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-ink-800 text-gold-400 border border-gold-500/20 font-medium">
+                      {items.length} {items.length === 1 ? 'opção' : 'opções'}
                     </span>
                   </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-display text-xl gold-text tracking-wide">R${service.price}</p>
-                </div>
+                  <ChevronDown
+                    size={18}
+                    className={`text-gold-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {/* Conteúdo Expandível da Categoria */}
+                {isOpen && (
+                  <div className="px-4 pb-4 space-y-2.5 border-t border-white/5 pt-3">
+                    {items.map((service) => {
+                      const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
+                      return (
+                        <div
+                          key={service.id}
+                          onClick={() => onNavigate('book', service.id)}
+                          className="p-3 rounded-xl bg-ink-800/40 border border-white/5 flex items-center gap-3 cursor-pointer hover:border-gold-500/30 transition-colors"
+                        >
+                          <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
+                            <Icon size={18} className="text-gold-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-xs font-semibold text-ink-100 truncate">{service.name}</h4>
+                            <p className="text-[11px] text-ink-300 mt-0.5 line-clamp-1">{service.description || ''}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[10px] text-ink-300 flex items-center gap-1">
+                                <Clock size={10} /> {service.duration || 30} min
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-display text-base gold-text tracking-wide">R${service.price}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </section>
 
-      {/* Nossa Equipe (Apenas Apresentação) */}
+      {/* Nossa Equipe (Card com Like e Contador Apenas) */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
         </div>
         <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
-          {dbBarbers.map((barber) => (
-            <div 
-              key={barber.id} 
-              className="card shrink-0 w-40 overflow-hidden"
-            >
-              <div className="h-44 overflow-hidden">
-                <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
-              </div>
-              <div className="p-3">
-                <h4 className="text-sm font-semibold text-ink-100 truncate">{barber.name}</h4>
-                <p className="text-[11px] text-gold-400 mb-1">{barber.role}</p>
-                <div className="flex items-center gap-1">
-                  <Star size={12} className="text-gold-400 fill-gold-400" />
-                  <span className="text-[11px] text-ink-200 font-medium">{barber.rating}</span>
-                  <span className="text-[11px] text-ink-400">({barber.reviews})</span>
+          {dbBarbers.map((barber) => {
+            const barberLike = likes[barber.id] || { count: barber.reviews || 0, liked: false };
+            return (
+              <div 
+                key={barber.id} 
+                className="card shrink-0 w-40 overflow-hidden"
+              >
+                <div className="h-44 overflow-hidden relative">
+                  <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
+                </div>
+                <div className="p-3">
+                  <h4 className="text-sm font-semibold text-ink-100 truncate">{barber.name}</h4>
+                  <p className="text-[11px] text-gold-400 mb-2">{barber.role}</p>
+
+                  {/* Botão de Like e Contador */}
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <button
+                      onClick={() => toggleLike(barber.id)}
+                      className="flex items-center gap-1.5 text-xs text-ink-300 hover:text-gold-400 transition-colors"
+                    >
+                      <Heart
+                        size={15}
+                        className={barberLike.liked ? 'text-red-500 fill-red-500' : 'text-ink-400'}
+                      />
+                      <span className="text-[11px] font-medium text-ink-200">
+                        {barberLike.count}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
