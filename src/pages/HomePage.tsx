@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Heart, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar
+  Flame, Palette, Eye, Crown, Calendar, Star
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { heroImage, shopInterior, beardGrooming } from '@/data';
@@ -33,7 +33,7 @@ interface HomePageProps {
   onNavigate: (tab: TabKey, serviceId?: string) => void;
 }
 
-// Função auxiliar para capitalizar cada palavra da categoria (ex: "cabelo e barba" -> "Cabelo E Barba" / "cabelo" -> "Cabelo")
+// Função para capitalizar o nome da categoria (ex: "quimica" -> "Química", "barba" -> "Barba")
 function capitalizeCategory(category: string): string {
   if (!category) return 'Outros Serviços';
   return category
@@ -50,13 +50,24 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
   
-  // Estado para controlar quais categorias de serviço estão abertas/fechadas
+  // Cálculo dinâmico dos anos de história (ex: fundação em 2018)
+  const currentYear = new Date().getFullYear();
+  const foundingYear = 2018;
+  const yearsOfHistory = Math.max(1, currentYear - foundingYear);
+
+  // Rating dinâmico do Google / Barbearia
+  const [googleRating, setGoogleRating] = useState<{ rating: number; count: number }>({
+    rating: 4.9,
+    count: 128
+  });
+
+  // Estado dos dropdowns de categorias (iniciam fechados)
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
 
-  // Estado local para gerenciar likes dos barbeiros
+  // Likes dos barbeiros iniciando estritamente em 0
   const [likes, setLikes] = useState<Record<string, { count: number; liked: boolean }>>({});
 
-  // 1. Buscar barbeiros do Supabase
+  // 1. Buscar barbeiros do Supabase e inicializar likes em 0
   useEffect(() => {
     async function fetchBarbers() {
       try {
@@ -79,10 +90,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           }));
           setDbBarbers(mapped);
 
-          // Inicializar estado dos likes
+          // Inicializa os likes EXATAMENTE em 0
           const initialLikes: Record<string, { count: number; liked: boolean }> = {};
           mapped.forEach((b) => {
-            initialLikes[b.id] = { count: b.reviews || 0, liked: false };
+            initialLikes[b.id] = { count: 0, liked: false };
           });
           setLikes(initialLikes);
         }
@@ -168,7 +179,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     }));
   };
 
-  // Alternar botão de curtida do barbeiro
+  // Alternar botão de curtida do barbeiro (incrementa / decrementa a partir de 0)
   const toggleLike = (barberId: string) => {
     setLikes((prev) => {
       const current = prev[barberId] || { count: 0, liked: false };
@@ -176,14 +187,14 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       return {
         ...prev,
         [barberId]: {
-          count: isLiked ? current.count - 1 : current.count + 1,
+          count: isLiked ? Math.max(0, current.count - 1) : current.count + 1,
           liked: !isLiked,
         },
       };
     });
   };
 
-  // Agrupar serviços por categoria e aplicar a capitalização no nome da categoria
+  // Agrupar serviços por categoria e aplicar a capitalização no nome
   const groupedServices = dbServices.reduce<Record<string, Service[]>>((acc, service) => {
     const rawCategory = service.category || 'outros serviços';
     const category = capitalizeCategory(rawCategory);
@@ -255,18 +266,20 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </section>
       )}
 
-      {/* Stats */}
-      <section className="grid grid-cols-3 gap-3 px-5 mt-4">
-        {[
-          { label: 'Anos de história', value: '12+' },
-          { label: 'Clientes/mês', value: '800+' },
-          { label: 'Avaliação', value: '4.9' },
-        ].map((stat) => (
-          <div key={stat.label} className="card p-3 text-center">
-            <p className="font-display text-2xl gold-text tracking-wide">{stat.value}</p>
-            <p className="text-[10px] text-ink-300 mt-0.5">{stat.label}</p>
+      {/* Stats e Rating Conectado */}
+      <section className="grid grid-cols-2 gap-3 px-5 mt-4">
+        <div className="card p-3 text-center flex flex-col justify-center items-center">
+          <p className="font-display text-2xl gold-text tracking-wide">{yearsOfHistory}+</p>
+          <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
+        </div>
+
+        <div className="card p-3 flex flex-col justify-center items-center text-center">
+          <div className="flex items-center gap-1">
+            <Star size={16} className="text-gold-400 fill-gold-400" />
+            <span className="font-display text-2xl gold-text tracking-wide">{googleRating.rating}</span>
           </div>
-        ))}
+          <p className="text-[10px] text-ink-300 mt-0.5">Google ({googleRating.count} avaliações)</p>
+        </div>
       </section>
 
       {/* Serviços (Separados por Categoria em Dropdown / Accordion Fechados) */}
@@ -337,14 +350,14 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Nossa Equipe (Card com Like e Contador Apenas) */}
+      {/* Nossa Equipe (Card com Like e Contador Iniciando em 0) */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
         </div>
         <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
           {dbBarbers.map((barber) => {
-            const barberLike = likes[barber.id] || { count: barber.reviews || 0, liked: false };
+            const barberLike = likes[barber.id] || { count: 0, liked: false };
             return (
               <div 
                 key={barber.id} 
@@ -357,7 +370,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                   <h4 className="text-sm font-semibold text-ink-100 truncate">{barber.name}</h4>
                   <p className="text-[11px] text-gold-400 mb-2">{barber.role}</p>
 
-                  {/* Botão de Like e Contador */}
+                  {/* Botão de Like e Contador Iniciando em 0 */}
                   <div className="flex items-center justify-between pt-1 border-t border-white/5">
                     <button
                       onClick={() => toggleLike(barber.id)}
