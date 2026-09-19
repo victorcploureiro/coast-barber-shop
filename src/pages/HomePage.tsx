@@ -4,7 +4,7 @@ import {
   Flame, Palette, Eye, Crown, Calendar
 } from 'lucide-react';
 import Header from '@/components/Header';
-import { services, heroImage, shopInterior, beardGrooming } from '@/data';
+import { heroImage, shopInterior, beardGrooming } from '@/data';
 import { BRAND_CONFIG } from '@/config/brand';
 import type { TabKey, Barber } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,6 +19,15 @@ const iconMap: Record<string, typeof Scissors> = {
   crown: Crown,
 };
 
+interface Service {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  duration?: number;
+  icon?: string;
+}
+
 interface HomePageProps {
   onNavigate: (tab: TabKey, serviceId?: string) => void;
 }
@@ -27,8 +36,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const { user } = useAuth();
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
+  const [dbServices, setDbServices] = useState<Service[]>([]);
   const [userName, setUserName] = useState<string>('');
 
+  // 1. Buscar barbeiros do Supabase
   useEffect(() => {
     async function fetchBarbers() {
       try {
@@ -59,6 +70,27 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchBarbers();
   }, []);
 
+  // 2. Buscar serviços do Supabase
+  useEffect(() => {
+    async function fetchServices() {
+      try {
+        const { data, error } = await supabase
+          .from('services')
+          .select('*')
+          .order('name');
+
+        if (!error && data) {
+          setDbServices(data);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar serviços:', err);
+      }
+    }
+
+    fetchServices();
+  }, []);
+
+  // 3. Buscar perfil e agendamento do usuário logado
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -181,7 +213,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         ))}
       </section>
 
-      {/* Serviços */}
+      {/* Serviços do Banco de Dados */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
@@ -190,8 +222,8 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           </button>
         </div>
         <div className="space-y-2.5">
-          {services.slice(0, 4).map((service) => {
-            const Icon = iconMap[service.icon] ?? Scissors;
+          {dbServices.slice(0, 4).map((service) => {
+            const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
             return (
               <div 
                 key={service.id} 
@@ -203,10 +235,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-semibold text-ink-100">{service.name}</h4>
-                  <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description}</p>
+                  <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description || ''}</p>
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-xs text-ink-200 flex items-center gap-1">
-                      <Clock size={11} /> {service.duration} min
+                      <Clock size={11} /> {service.duration || 30} min
                     </span>
                   </div>
                 </div>
