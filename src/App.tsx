@@ -10,23 +10,37 @@ import type { TabKey } from '@/types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('home');
+  const [selectedBarberId, setSelectedBarberId] = useState<string | null>(null);
+
+  const handleNavigate = (tab: TabKey, barberId?: string) => {
+    if (barberId) {
+      setSelectedBarberId(barberId);
+    }
+    setActiveTab(tab);
+  };
 
   const renderPage = () => {
     switch (activeTab) {
       case 'home':
-        return <HomePage onNavigate={setActiveTab} />;
+        return <HomePage onNavigate={handleNavigate} />;
       case 'book':
-        return <BookPage onNavigate={setActiveTab} />;
+        return (
+          <BookPage
+            onNavigate={handleNavigate}
+            initialBarberId={selectedBarberId}
+            onClearInitialBarber={() => setSelectedBarberId(null)}
+          />
+        );
       case 'appointments':
-        return <AppointmentsPage />;
+        return <AppointmentsPage onNavigate={handleNavigate} />;
       case 'club':
         return <ClubPage />;
       case 'shop':
         return <ShopPage />;
       case 'profile':
-        return <ProfilePage onNavigate={setActiveTab} />;
+        return <ProfilePage onNavigate={handleNavigate} />;
       default:
-        return <HomePage onNavigate={setActiveTab} />;
+        return <HomePage onNavigate={handleNavigate} />;
     }
   };
 

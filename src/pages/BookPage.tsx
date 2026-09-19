@@ -1,674 +1,318 @@
 import { useState, useEffect } from 'react';
-import { 
-  Check, ChevronLeft, ChevronRight, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, Loader2, Plus, XCircle, AlertCircle,
-  User, Clock, LogIn
-} from 'lucide-react';
+import { Calendar, Clock, User, Scissors, CheckCircle, Loader2 } from 'lucide-react';
 import Header from '@/components/Header';
-import { timeSlots } from '@/data';
-import type { Service, Barber } from '@/types';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
+import type { TabKey } from '@/types';
 
-const iconMap: Record<string, typeof Scissors> = {
-  scissors: Scissors,
-  sparkles: Sparkles,
-  flame: Flame,
-  palette: Palette,
-  eye: Eye,
-  crown: Crown,
-};
+const ROLE_BARBER_ID = '9edfdd5a-7095-472b-8498-27952e6750b8';
 
-type Step = 'list' | 'service' | 'choose_path' | 'barber' | 'datetime' | 'confirm';
-type PathMode = 'barber' | 'datetime';
+const TIME_SLOTS = [
+  '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'
+];
 
-interface BookPageProps {
-  onNavigate?: (tab: string) => void;
+interface Service {
+  id: string;
+  name: string;
+  price: number;
 }
 
-export default function BookPage({ onNavigate }: BookPageProps) {
+interface Barber {
+  id: string;
+  name: string;
+  avatar_url?: string;
+  rating?: number;
+}
+
+interface Appointment {
+  barber_id: string;
+  time_slot: string;
+  date: string;
+  status: string;
+}
+
+interface BookPageProps {
+  onNavigate?: (tab: TabKey, barberId?: string) => void;
+  initialBarberId?: string | null;
+  onClearInitialBarber?: () => void;
+}
+
+export default function BookPage({
+  onNavigate,
+  initialBarberId,
+  onClearInitialBarber,
+}: BookPageProps) {
   const { user } = useAuth();
 
-  const [step, setStep] = useState<Step>('list');
-  const [pathMode, setPathMode] = useState<PathMode>('barber');
-  const [userAppointments, setUserAppointments] = useState<any[]>([]);
-  const [loadingAppts, setLoadingAppts] = useState(true);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [services, setServices] = useState<Service[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
 
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [selectedBarber, setSelectedBarber] = useState<Barber | null>(null);
-  const [selectedDateIndex, setSelectedDateIndex] = useState<number>(0);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  
-  const [dbServices, setDbServices] = useState<Service[]>([]);
-  const [loadingServices, setLoadingServices] = useState(true);
-  const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
-  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
-  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
 
-  const today = new Date();
-  const dates = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    return d;
-  });
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
 
-  const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-  // Redireciona para o perfil/login se não estiver logado
-  const handleStartBooking = () => {
-    if (!user) {
-      if (onNavigate) {
-        onNavigate('profile');
-      }
-      return;
-    }
-    setStep('service');
-  };
-
-  const getStepOrder = (): Step[] => {
-    if (pathMode === 'barber') {
-      return ['service', 'choose_path', 'barber', 'datetime', 'confirm'];
-    }
-    return ['service', 'choose_path', 'datetime', 'barber', 'confirm'];
-  };
-
-  const stepOrder = getStepOrder();
-  const currentStepIndex = stepOrder.indexOf(step);
-
-  // 1. Carregar Serviços e Barbeiros
+  // 1. Carregar Serviços e Apenas Barbeiros via user_roles
   useEffect(() => {
-    async function fetchServicesAndBarbers() {
+    const fetchData = async () => {
+      setLoading(true);
       try {
-        const { data: servicesData } = await supabase
-          .from('services')
-          .select('*')
-          .order('price', { ascending: true });
+        const { data: servicesData } = await supabase.from('services').select('*');
+        if (servicesData) setServices(servicesData);
 
-        if (servicesData) setDbServices(servicesData);
+        // Busca pela tabela user_roles e traz o perfil relacionado
+        const { data: barbersData, error: barberError } = await supabase
+          .from('user_roles')
+          .select('user_id, profiles!inner(id, name, avatar_url, rating)')
+          .eq('role_id', ROLE_BARBER_ID);
 
-        const { data: barbersData } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('name');
-
-        if (barbersData && barbersData.length > 0) {
-          setDbBarbers(barbersData.map((b) => ({
-            id: b.id,
-            name: b.name || 'Barbeiro',
-            role: 'Barbeiro',
-            image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-            rating: b.rating || 5.0,
-            reviews: b.reviews || 12,
-            bio: '',
-            specialties: []
-          })));
+        if (!barberError && barbersData) {
+          const list = barbersData
+            .map((item: any) => item.profiles)
+            .filter(Boolean);
+          setBarbers(list);
         }
       } catch (err) {
-        console.error('Erro ao buscar dados:', err);
+        console.error('Erro ao buscar dados do agendamento:', err);
       } finally {
-        setLoadingServices(false);
+        setLoading(false);
       }
-    }
+    };
 
-    fetchServicesAndBarbers();
+    fetchData();
   }, []);
 
-  // 2. Carregar agendamentos do cliente
-  const fetchUserAppointments = async () => {
-    if (!user) {
-      setLoadingAppts(false);
-      return;
+  // 2. Aplicar Barbeiro Inicial enviado via navegação
+  useEffect(() => {
+    if (initialBarberId && barbers.length > 0) {
+      const barber = barbers.find((b) => b.id === initialBarberId);
+      if (barber) {
+        setSelectedBarber(barber);
+      }
+      if (onClearInitialBarber) onClearInitialBarber();
     }
-    try {
+  }, [initialBarberId, barbers, onClearInitialBarber]);
+
+  // 3. Buscar agendamentos existentes da data para calcular ocupação
+  useEffect(() => {
+    const fetchAppointments = async () => {
+      if (!selectedDate) return;
       const { data } = await supabase
         .from('appointments')
-        .select('*, service:services(name), barber:profiles!appointments_barber_id_fkey(name)')
-        .eq('client_id', user.id)
-        .order('date', { ascending: false })
-        .order('time_slot', { ascending: false });
+        .select('barber_id, time_slot, status, date')
+        .eq('date', selectedDate)
+        .neq('status', 'cancelled');
 
-      if (data) setUserAppointments(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingAppts(false);
-    }
+      if (data) setExistingAppointments(data);
+    };
+
+    fetchAppointments();
+  }, [selectedDate]);
+
+  const isSlotBookedForBarber = (barberId: string, timeSlot: string) => {
+    return existingAppointments.some(
+      (a) => a.barber_id === barberId && a.time_slot === timeSlot
+    );
   };
 
-  useEffect(() => {
-    fetchUserAppointments();
-  }, [user]);
-
-  const handleCancel = async (id: string) => {
-    if (!confirm('Deseja cancelar este agendamento?')) return;
-    setCancellingId(id);
-    try {
-      await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
-      await fetchUserAppointments();
-    } finally {
-      setCancellingId(null);
-    }
+  const isBarberAvailableAtSlot = (barberId: string, timeSlot: string) => {
+    return !isSlotBookedForBarber(barberId, timeSlot);
   };
 
-  const isClosedDay = (dateObj: Date) => {
-    const day = dateObj.getDay();
-    return day === 0 || day === 1;
-  };
-
-  const getAvailableSlots = (dateObj: Date, allSlots: string[]) => {
-    if (isClosedDay(dateObj)) return [];
-
-    const now = new Date();
-    const isToday = 
-      dateObj.getDate() === now.getDate() &&
-      dateObj.getMonth() === now.getMonth() &&
-      dateObj.getFullYear() === now.getFullYear();
-
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-    return allSlots.filter((slot) => {
-      const [hours, minutes] = slot.split(':').map(Number);
-      const slotTotalMinutes = hours * 60 + minutes;
-
-      if (isToday && slotTotalMinutes <= currentMinutes) return false;
-      if (dateObj.getDay() === 6) return slotTotalMinutes <= 1110;
-      return slotTotalMinutes <= 1140;
-    });
-  };
-
-  const getSelectedDateString = (index: number) => {
-    const dateObj = dates[index];
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  useEffect(() => {
-    async function fetchBookedSlots() {
-      if (!selectedBarber) {
-        setBookedSlots([]);
-        return;
-      }
-      setLoadingSlots(true);
-      const formattedDate = getSelectedDateString(selectedDateIndex);
-      try {
-        const { data } = await supabase
-          .from('appointments')
-          .select('time_slot')
-          .eq('barber_id', selectedBarber.id)
-          .eq('date', formattedDate)
-          .neq('status', 'cancelled');
-        if (data) setBookedSlots(data.map((item) => item.time_slot));
-      } finally { setLoadingSlots(false); }
-    }
-    if (step === 'datetime') fetchBookedSlots();
-  }, [selectedBarber, selectedDateIndex, step]);
-
-  const selectPath = (path: PathMode) => {
-    setPathMode(path);
-    setStep(path);
-  };
-
-  const handleNext = () => {
-    const nextIdx = currentStepIndex + 1;
-    if (nextIdx < stepOrder.length) {
-      if (step === 'datetime') setBookingError(null);
-      setStep(stepOrder[nextIdx]);
-    }
-  };
-
-  const handleBack = () => {
-    setBookingError(null);
-    const prevIdx = currentStepIndex - 1;
-    if (prevIdx >= 0) {
-      setStep(stepOrder[prevIdx]);
-    } else {
-      setStep('list');
-    }
-  };
-
-  const handleConfirm = async () => {
+  const handleCreateAppointment = async () => {
     if (!user) {
-      setBookingError('Você precisa estar logado para agendar.');
       if (onNavigate) onNavigate('profile');
       return;
     }
+    if (!selectedService || !selectedBarber || !selectedTimeSlot || !selectedDate) return;
 
-    if (!selectedService || !selectedBarber || !selectedTime) return;
-    setIsSubmitting(true);
-    setBookingError(null);
-    const formattedDate = getSelectedDateString(selectedDateIndex);
-
+    setSubmitting(true);
     try {
-      const { data: existingApt } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('barber_id', selectedBarber.id)
-        .eq('date', formattedDate)
-        .eq('time_slot', selectedTime)
-        .neq('status', 'cancelled')
-        .maybeSingle();
-
-      if (existingApt) {
-        setBookingError('Este horário acabou de ser reservado por outro cliente. Escolha outro horário.');
-        setStep('datetime');
-        setIsSubmitting(false);
-        return;
-      }
-
       const { error } = await supabase.from('appointments').insert({
         client_id: user.id,
         barber_id: selectedBarber.id,
         service_id: selectedService.id,
-        date: formattedDate,
-        time_slot: selectedTime,
+        date: selectedDate,
+        time_slot: selectedTimeSlot,
         price: selectedService.price,
         status: 'scheduled',
       });
 
-      if (error) throw new Error(error.message);
-
-      setConfirmed(true);
-      await fetchUserAppointments();
-    } catch (err: any) {
-      setBookingError(err.message || 'Erro ao realizar agendamento.');
+      if (!error) {
+        setSuccess(true);
+      } else {
+        alert('Erro ao realizar agendamento. Tente novamente.');
+      }
+    } catch (err) {
+      console.error(err);
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
 
-  const reset = () => {
-    setConfirmed(false);
-    setBookingError(null);
-    setStep('list');
-    setSelectedService(null);
-    setSelectedBarber(null);
-    setSelectedTime(null);
-    setSelectedDateIndex(0);
-  };
-
-  if (confirmed) {
+  if (loading) {
     return (
-      <div className="min-h-screen pb-44">
-        <Header title="Agendamento" />
-        <div className="flex flex-col items-center justify-center px-5 mt-16 animate-scale-in">
-          <div className="h-20 w-20 rounded-full gold-gradient flex items-center justify-center mb-5 shadow-lg shadow-gold-500/30">
-            <Check size={40} className="text-ink-950" strokeWidth={3} />
-          </div>
-          <h2 className="text-xl font-bold text-ink-100 mb-2">Agendamento confirmado!</h2>
-          <p className="text-sm text-ink-300 text-center max-w-xs mb-6">
-            {selectedService?.name} com {selectedBarber?.name} em {weekdays[dates[selectedDateIndex].getDay()]}, {dates[selectedDateIndex].getDate()} de {months[dates[selectedDateIndex].getMonth()]} às {selectedTime}
-          </p>
-          <button
-            onClick={reset}
-            className="px-6 py-3 rounded-xl gold-gradient text-ink-950 text-sm font-semibold active:scale-95 transition-transform"
-          >
-            Ver Meus Agendamentos
-          </button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-gold-400 animate-spin" />
       </div>
     );
   }
 
-  if (step === 'list') {
-    const upcoming = userAppointments.filter(a => a.status === 'scheduled');
-    const past = userAppointments.filter(a => a.status !== 'scheduled');
-
+  if (success) {
     return (
-      <div className="min-h-screen pb-24 animate-fade-in">
-        <Header title="Agendamentos" />
-        <div className="px-5 mt-4 space-y-6">
-          <button
-            onClick={handleStartBooking}
-            className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20 active:scale-95 transition-transform"
-          >
-            <Plus size={18} strokeWidth={2.5} /> Novo Agendamento
-          </button>
-
-          {!user && (
-            <div className="card p-4 border border-gold-500/20 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-gold-500/10 flex items-center justify-center shrink-0">
-                  <LogIn size={20} className="text-gold-400" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-ink-100">Você não está logado</p>
-                  <p className="text-[11px] text-ink-400">Faça login para ver e realizar agendamentos</p>
-                </div>
-              </div>
-              <button
-                onClick={() => onNavigate && onNavigate('profile')}
-                className="px-3 py-1.5 rounded-lg bg-ink-800 border border-white/10 text-xs font-medium text-gold-400 hover:text-gold-300 transition-colors shrink-0"
-              >
-                Entrar
-              </button>
-            </div>
-          )}
-
-          <section>
-            <h3 className="text-sm font-bold text-ink-100 mb-3">Próximos Agendamentos</h3>
-            {loadingAppts ? (
-              <div className="py-8 text-center text-ink-300 flex items-center justify-center gap-2">
-                <Loader2 size={18} className="animate-spin text-gold-400" /> Carregando...
-              </div>
-            ) : upcoming.length === 0 ? (
-              <div className="card p-6 text-center text-ink-400">
-                <p className="text-sm font-medium">Você não possui agendamentos ativos.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {upcoming.map((apt) => (
-                  <div key={apt.id} className="card p-4 border border-gold-500/20">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full gold-gradient text-ink-950">
-                        Confirmado
-                      </span>
-                      <span className="text-xs text-ink-300 flex items-center gap-1">
-                        <Calendar size={13} className="text-gold-400" />
-                        {apt.date} às {apt.time_slot}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 my-2">
-                      <div className="h-10 w-10 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center">
-                        <Scissors size={18} className="text-gold-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-ink-100">{apt.service?.name}</p>
-                        <p className="text-xs text-ink-300">com {apt.barber?.name}</p>
-                      </div>
-                      <p className="font-display text-lg gold-text">R${apt.price}</p>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-white/5 flex justify-end">
-                      <button
-                        disabled={cancellingId === apt.id}
-                        onClick={() => handleCancel(apt.id)}
-                        className="text-xs font-semibold text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
-                      >
-                        {cancellingId === apt.id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
-                        Cancelar Agendamento
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {past.length > 0 && (
-            <section>
-              <h3 className="text-sm font-bold text-ink-100 mb-3">Histórico / Cancelados</h3>
-              <div className="space-y-2.5">
-                {past.map((apt) => (
-                  <div key={apt.id} className="card p-3.5 flex items-center gap-3 opacity-60">
-                    <div className="h-9 w-9 rounded-xl bg-ink-850 flex items-center justify-center shrink-0">
-                      <Scissors size={16} className="text-ink-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-ink-200">{apt.service?.name}</p>
-                      <p className="text-xs text-ink-400">{apt.date} • {apt.time_slot}</p>
-                    </div>
-                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                      apt.status === 'cancelled' ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
-                    }`}>
-                      {apt.status === 'cancelled' ? 'Cancelado' : 'Concluído'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
+      <div className="min-h-screen flex flex-col items-center justify-center px-5 text-center">
+        <CheckCircle className="w-16 h-16 text-green-400 mb-4 animate-bounce" />
+        <h2 className="text-xl font-bold text-ink-100 mb-2">Agendamento Confirmado!</h2>
+        <p className="text-sm text-ink-400 mb-6">Seu horário foi reservado com sucesso.</p>
+        <button
+          onClick={() => onNavigate && onNavigate('appointments')}
+          className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm"
+        >
+          Ver Meus Agendamentos
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-44">
-      <Header title="Novo Agendamento" subtitle="Siga os passos para realizar sua reserva" />
+    <div className="min-h-screen pb-24 animate-fade-in">
+      <Header title="Novo Agendamento" />
 
-      {/* Indicador de Progresso */}
-      <div className="px-5 mt-4">
-        <div className="flex items-center gap-2">
-          {stepOrder.map((s, i) => (
-            <div key={s} className="flex-1">
-              <div className={`h-1.5 rounded-full transition-all duration-300 ${
-                i <= currentStepIndex ? 'gold-gradient' : 'bg-ink-700'
-              }`} />
-            </div>
-          ))}
-        </div>
-      </div>
+      <main className="px-5 mt-4 space-y-6">
+        {/* SERVIÇO */}
+        <section>
+          <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
+            <Scissors size={16} className="text-gold-400" /> Escolha o Serviço
+          </h3>
+          <div className="grid grid-cols-1 gap-2.5">
+            {services.map((srv) => (
+              <div
+                key={srv.id}
+                onClick={() => setSelectedService(srv)}
+                className={`p-3.5 rounded-xl border cursor-pointer flex items-center justify-between transition-all ${
+                  selectedService?.id === srv.id
+                    ? 'border-gold-400 bg-gold-500/10'
+                    : 'border-white/5 bg-ink-850 hover:border-white/20'
+                }`}
+              >
+                <div>
+                  <p className="text-sm font-semibold text-ink-100">{srv.name}</p>
+                  <p className="text-xs text-gold-400 font-bold mt-0.5">R$ {srv.price}</p>
+                </div>
+                <div
+                  className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                    selectedService?.id === srv.id ? 'border-gold-400 bg-gold-400' : 'border-ink-500'
+                  }`}
+                >
+                  {selectedService?.id === srv.id && <div className="w-2 h-2 rounded-full bg-ink-950" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
-      {bookingError && (
-        <div className="mx-5 mt-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center gap-2.5">
-          <AlertCircle size={16} className="shrink-0 text-red-400" />
-          <span>{bookingError}</span>
-        </div>
-      )}
+        {/* DATA */}
+        <section>
+          <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
+            <Calendar size={16} className="text-gold-400" /> Escolha a Data
+          </h3>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              setSelectedTimeSlot(null);
+            }}
+            className="w-full bg-ink-800 border border-white/10 rounded-xl p-3 text-sm text-ink-100 focus:outline-none focus:border-gold-400"
+          />
+        </section>
 
-      {/* PASSO 1: Escolha do Serviço */}
-      {step === 'service' && (
-        <section className="px-5 mt-5 animate-fade-in">
-          <h3 className="text-sm font-semibold text-ink-100 mb-3">Selecione o serviço</h3>
-          {loadingServices ? (
-            <div className="py-12 flex items-center justify-center gap-2 text-ink-300">
-              <Loader2 size={20} className="animate-spin text-gold-400" />
-              <span className="text-xs">Carregando serviços...</span>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {dbServices.map((service) => {
-                const Icon = iconMap[service.icon] ?? Scissors;
-                const isSelected = selectedService?.id === service.id;
+        {/* BARBEIRO x HORÁRIO */}
+        <div className="grid grid-cols-1 gap-6">
+          {/* BARBEIROS */}
+          <section>
+            <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
+              <User size={16} className="text-gold-400" /> Escolha o Barbeiro
+            </h3>
+            <div className="space-y-2">
+              {barbers.map((barber) => {
+                const isOccupied =
+                  selectedTimeSlot && !isBarberAvailableAtSlot(barber.id, selectedTimeSlot);
+                const isSelected = selectedBarber?.id === barber.id;
+
                 return (
                   <button
-                    key={service.id}
-                    onClick={() => setSelectedService(service)}
-                    className={`card w-full p-4 flex items-center gap-4 text-left transition-all ${
-                      isSelected ? 'border-gold-500/50 ring-1 ring-gold-500/30' : 'card-hover'
+                    key={barber.id}
+                    disabled={!!isOccupied}
+                    onClick={() => setSelectedBarber(isSelected ? null : barber)}
+                    className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      isOccupied
+                        ? 'opacity-40 bg-ink-900 border-dashed border-ink-700 cursor-not-allowed'
+                        : isSelected
+                        ? 'border-gold-400 bg-gold-500/10'
+                        : 'border-white/5 bg-ink-850 hover:border-white/20'
                     }`}
                   >
-                    <div className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 ${
-                      isSelected ? 'gold-gradient' : 'bg-ink-800 border border-white/5'
-                    }`}>
-                      <Icon size={22} className={isSelected ? 'text-ink-950' : 'text-gold-400'} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-ink-100">{service.name}</h4>
-                      <p className="text-xs text-ink-300 mt-0.5 line-clamp-1">{service.description}</p>
-                    </div>
-                    <span className="font-display text-xl gold-text">R${service.price}</span>
+                    <span className={`text-sm font-medium ${isOccupied ? 'text-ink-500 line-through' : 'text-ink-100'}`}>
+                      {barber.name}
+                    </span>
+                    {isOccupied && <span className="text-[10px] text-red-400 font-bold uppercase">Ocupado</span>}
                   </button>
                 );
               })}
             </div>
-          )}
-        </section>
-      )}
+          </section>
 
-      {/* PASSO 2: Como prefere continuar */}
-      {step === 'choose_path' && (
-        <section className="px-5 mt-5 animate-fade-in space-y-4">
-          <h3 className="text-sm font-semibold text-ink-100 mb-1">Como prefere continuar?</h3>
-          <p className="text-xs text-ink-300 mb-4">Escolha a próxima etapa do seu agendamento:</p>
-
-          <button
-            onClick={() => selectPath('barber')}
-            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
-          >
-            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-              <User size={22} className="text-gold-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-base font-semibold text-ink-100">Escolher Barbeiro</h4>
-              <p className="text-xs text-ink-300 mt-0.5">Selecione o profissional de sua preferência primeiro</p>
-            </div>
-            <ChevronRight size={20} className="text-ink-400" />
-          </button>
-
-          <button
-            onClick={() => selectPath('datetime')}
-            className="card w-full p-5 flex items-center gap-4 text-left card-hover border border-white/5 hover:border-gold-500/30 transition-all"
-          >
-            <div className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-              <Clock size={22} className="text-gold-400" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-base font-semibold text-ink-100">Escolher Horário / Data</h4>
-              <p className="text-xs text-ink-300 mt-0.5">Veja os dias e horários disponíveis primeiro</p>
-            </div>
-            <ChevronRight size={20} className="text-ink-400" />
-          </button>
-        </section>
-      )}
-
-      {/* PASSO: Escolha do Barbeiro */}
-      {step === 'barber' && (
-        <section className="px-5 mt-5 animate-fade-in">
-          <h3 className="text-sm font-semibold text-ink-100 mb-3">Selecione o barbeiro</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {dbBarbers.map((barber) => {
-              const isSelected = selectedBarber?.id === barber.id;
-              return (
-                <button
-                  key={barber.id}
-                  onClick={() => setSelectedBarber(barber)}
-                  className={`card overflow-hidden text-left transition-all ${
-                    isSelected ? 'border-gold-500/50 ring-1 ring-gold-500/30' : 'card-hover'
-                  }`}
-                >
-                  <div className="h-36 overflow-hidden relative">
-                    <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
-                  </div>
-                  <div className="p-3">
-                    <h4 className="text-sm font-semibold text-ink-100">{barber.name}</h4>
-                    <p className="text-[11px] text-gold-400 mb-1">{barber.role}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* PASSO: Escolha da Data / Horário */}
-      {step === 'datetime' && (
-        <section className="px-5 mt-5 animate-fade-in">
-          <h3 className="text-sm font-semibold text-ink-100 mb-3">Escolha a data</h3>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-            {dates.map((date, i) => {
-              const isSelected = selectedDateIndex === i;
-              const isClosed = isClosedDay(date);
-
-              return (
-                <button
-                  key={i}
-                  disabled={isClosed}
-                  onClick={() => { setSelectedDateIndex(i); setSelectedTime(null); }}
-                  className={`shrink-0 w-16 py-3 rounded-xl text-center transition-all ${
-                    isClosed
-                      ? 'bg-ink-900/40 text-ink-600 opacity-40 cursor-not-allowed border border-white/5'
-                      : isSelected
-                      ? 'gold-gradient text-ink-950 font-bold shadow-md shadow-gold-500/10'
-                      : 'card text-ink-200 card-hover'
-                  }`}
-                >
-                  <p className="text-[10px]">{weekdays[date.getDay()]}</p>
-                  <p className="text-xl font-bold mt-0.5">{date.getDate()}</p>
-                  <p className="text-[10px]">{isClosed ? 'Fechado' : months[date.getMonth()]}</p>
-                </button>
-              );
-            })}
-          </div>
-
-          <h3 className="text-sm font-semibold text-ink-100 mt-5 mb-3">Horários disponíveis</h3>
-          {loadingSlots ? (
-            <div className="py-8 text-center text-ink-300 flex items-center justify-center gap-2">
-              <Loader2 size={18} className="animate-spin text-gold-400" />
-              <span className="text-xs">Verificando agenda...</span>
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-2">
-              {getAvailableSlots(dates[selectedDateIndex], timeSlots).map((time) => {
-                const isBooked = bookedSlots.includes(time);
-                const isSelected = selectedTime === time;
+          {/* HORÁRIOS */}
+          <section>
+            <h3 className="text-sm font-bold text-ink-100 mb-3 flex items-center gap-2">
+              <Clock size={16} className="text-gold-400" /> Escolha o Horário
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              {TIME_SLOTS.map((slot) => {
+                const isOccupied =
+                  selectedBarber && isSlotBookedForBarber(selectedBarber.id, slot);
+                const isSelected = selectedTimeSlot === slot;
 
                 return (
                   <button
-                    key={time}
-                    disabled={isBooked}
-                    onClick={() => setSelectedTime(time)}
-                    className={`py-2.5 rounded-xl text-sm font-medium transition-all ${
-                      isSelected
-                        ? 'gold-gradient text-ink-950 font-bold'
-                        : isBooked
-                        ? 'bg-ink-850 text-ink-500 line-through cursor-not-allowed border border-transparent opacity-50'
-                        : 'card text-ink-200 card-hover'
+                    key={slot}
+                    disabled={!!isOccupied}
+                    onClick={() => setSelectedTimeSlot(isSelected ? null : slot)}
+                    className={`py-2.5 px-2 rounded-xl border text-xs font-semibold text-center transition-all ${
+                      isOccupied
+                        ? 'opacity-40 line-through border-red-500/20 bg-red-500/5 text-red-400 cursor-not-allowed'
+                        : isSelected
+                        ? 'border-gold-400 bg-gold-500 text-ink-950 font-bold'
+                        : 'border-white/5 bg-ink-850 text-ink-200 hover:border-white/20'
                     }`}
                   >
-                    {time}
+                    {slot}
                   </button>
                 );
               })}
             </div>
-          )}
-        </section>
-      )}
-
-      {/* PASSO FINAL: Confirmação */}
-      {step === 'confirm' && selectedService && selectedBarber && (
-        <section className="px-5 mt-5 animate-fade-in">
-          <div className="card p-5">
-            <h3 className="text-sm font-semibold text-ink-100 mb-4">Confirme seu agendamento</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm"><span className="text-ink-300">Serviço</span><span className="text-ink-100 font-medium">{selectedService.name}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-ink-300">Barbeiro</span><span className="text-ink-100 font-medium">{selectedBarber.name}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-ink-300">Data e Horário</span><span className="text-ink-100 font-medium">{dates[selectedDateIndex].getDate()}/{dates[selectedDateIndex].getMonth()+1} às {selectedTime}</span></div>
-              <div className="border-t border-white/5 pt-3 flex justify-between"><span className="text-ink-300 text-sm">Total</span><span className="font-display text-2xl gold-text">R${selectedService.price}</span></div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Barra de Ações do Rodapé */}
-      <div className="fixed bottom-16 left-0 right-0 z-30 px-5 pt-3 pb-3 glass-strong border-t border-white/5">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleBack}
-            className="h-12 w-12 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center shrink-0 active:scale-95 transition-transform"
-          >
-            <ChevronLeft size={20} className="text-ink-200" />
-          </button>
-          
-          {step === 'confirm' ? (
-            <button
-              disabled={isSubmitting}
-              onClick={handleConfirm}
-              className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20"
-            >
-              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} strokeWidth={3} />} Confirmar agendamento
-            </button>
-          ) : step !== 'choose_path' ? (
-            <button
-              onClick={handleNext}
-              disabled={
-                (step === 'service' && !selectedService) ||
-                (step === 'barber' && !selectedBarber) ||
-                (step === 'datetime' && !selectedTime)
-              }
-              className="flex-1 h-12 rounded-xl gold-gradient text-ink-950 text-sm font-bold active:scale-95 transition-transform disabled:opacity-30 disabled:grayscale flex items-center justify-center gap-2"
-            >
-              Continuar <ChevronRight size={18} />
-            </button>
-          ) : null}
+          </section>
         </div>
-      </div>
+
+        {/* BOTAO CONFIRMAR */}
+        <div className="pt-4 border-t border-white/10">
+          <button
+            disabled={!selectedService || !selectedBarber || !selectedTimeSlot || submitting}
+            onClick={handleCreateAppointment}
+            className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-gold-500/20 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-transform"
+          >
+            {submitting ? <Loader2 size={18} className="animate-spin" /> : 'Confirmar Agendamento'}
+          </button>
+        </div>
+      </main>
     </div>
   );
 }

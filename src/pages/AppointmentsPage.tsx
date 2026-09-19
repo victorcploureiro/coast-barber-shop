@@ -1,12 +1,27 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, Scissors, XCircle, Loader2 } from 'lucide-react';
+import { Calendar, Clock, User, Scissors, AlertCircle, Loader2, Plus } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+import type { TabKey } from '@/types';
 
-export default function AppointmentsPage() {
+interface AppointmentDetails {
+  id: string;
+  date: string;
+  time_slot: string;
+  price: number;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  services: { name: string } | null;
+  barber: { name: string; avatar_url: string } | null;
+}
+
+interface AppointmentsPageProps {
+  onNavigate?: (tab: TabKey) => void;
+}
+
+export default function AppointmentsPage({ onNavigate }: AppointmentsPageProps) {
   const { user } = useAuth();
-  const [appointments, setAppointments] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
@@ -17,15 +32,23 @@ export default function AppointmentsPage() {
     }
 
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('appointments')
-        .select('*, service:services(name, price), barber:profiles!appointments_barber_id_fkey(name)')
+        .select(`
+          id,
+          date,
+          time_slot,
+          price,
+          status,
+          services ( name ),
+          barber:profiles!appointments_barber_id_fkey ( name, avatar_url )
+        `)
         .eq('client_id', user.id)
-        .order('date', { ascending: false })
-        .order('time_slot', { ascending: false });
+        .order('date', { ascending: false });
 
       if (!error && data) {
-        setAppointments(data);
+        setAppointments(data as unknown as AppointmentDetails[]);
       }
     } catch (err) {
       console.error('Erro ao buscar agendamentos:', err);
@@ -38,8 +61,8 @@ export default function AppointmentsPage() {
     fetchAppointments();
   }, [user]);
 
-  const handleCancel = async (id: string) => {
-    if (!confirm('Tem certeza que deseja cancelar este agendamento?')) return;
+  const handleCancelAppointment = async (id: string) => {
+    if (!confirm('Deseja realmente cancelar este agendamento?')) return;
 
     setCancellingId(id);
     try {
@@ -49,106 +72,125 @@ export default function AppointmentsPage() {
         .eq('id', id);
 
       if (!error) {
-        await fetchAppointments();
+        setAppointments((prev) =>
+          prev.map((app) => (app.id === id ? { ...app, status: 'cancelled' } : app))
+        );
+      } else {
+        alert('Não foi possível cancelar o agendamento.');
       }
     } catch (err) {
-      console.error('Erro ao cancelar agendamento:', err);
+      console.error(err);
     } finally {
       setCancellingId(null);
     }
   };
 
-  if (loading) {
+  if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-gold-400 animate-spin" />
+      <div className="min-h-screen pb-24">
+        <Header title="Meus Agendamentos" />
+        <div className="px-5 mt-12 text-center">
+          <AlertCircle className="w-12 h-12 text-gold-400 mx-auto mb-3 opacity-80" />
+          <h3 className="text-base font-bold text-ink-100 mb-1">Faça login para continuar</h3>
+          <p className="text-xs text-ink-400 mb-6">Você precisa estar conectado para visualizar seus agendamentos.</p>
+          <button
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="w-full py-3 rounded-xl gold-gradient text-ink-950 font-bold text-sm"
+          >
+            Ir para o Perfil
+          </button>
+        </div>
       </div>
     );
   }
-
-  const upcoming = appointments.filter(a => a.status === 'scheduled');
-  const past = appointments.filter(a => a.status !== 'scheduled');
 
   return (
     <div className="min-h-screen pb-24 animate-fade-in">
       <Header title="Meus Agendamentos" />
 
-      <main className="px-5 mt-4 space-y-6">
-        {/* Agendamentos Ativos */}
-        <section>
-          <h3 className="text-sm font-bold text-ink-100 mb-3">Próximos Agendamentos</h3>
-          {upcoming.length === 0 ? (
-            <div className="card p-6 text-center text-ink-400">
-              <p className="text-sm font-medium">Nenhum agendamento ativo.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {upcoming.map((apt) => (
-                <div key={apt.id} className="card p-4 border border-gold-500/20">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full gold-gradient text-ink-950">
-                      Confirmado
+      <main className="px-5 mt-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-ink-400 font-medium">Histórico e Próximos Horários</p>
+          <button
+            onClick={() => onNavigate && onNavigate('book')}
+            className="flex items-center gap-1 text-xs font-bold text-gold-400 bg-gold-500/10 hover:bg-gold-500/20 px-3 py-1.5 rounded-lg border border-gold-400/20 transition-all"
+          >
+            <Plus size={14} /> Novo
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <Loader2 className="w-8 h-8 text-gold-400 animate-spin" />
+          </div>
+        ) : appointments.length === 0 ? (
+          <div className="p-8 text-center bg-ink-850 rounded-2xl border border-white/5 mt-4">
+            <Calendar className="w-10 h-10 text-ink-500 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-ink-200">Nenhum agendamento encontrado</p>
+            <p className="text-xs text-ink-400 mt-1 mb-4">Reserve um horário com nossos profissionais.</p>
+            <button
+              onClick={() => onNavigate && onNavigate('book')}
+              className="py-2.5 px-5 rounded-xl gold-gradient text-ink-950 font-bold text-xs"
+            >
+              Agendar Agora
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {appointments.map((app) => (
+              <div
+                key={app.id}
+                className="p-4 rounded-2xl bg-ink-850 border border-white/5 space-y-3 relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Scissors size={15} className="text-gold-400" />
+                    <span className="text-sm font-bold text-ink-100">
+                      {app.services?.name || 'Serviço'}
                     </span>
-                    <span className="text-xs text-ink-300 flex items-center gap-1">
-                      <Calendar size={13} className="text-gold-400" />
-                      {apt.date} às {apt.time_slot}
-                    </span>
                   </div>
-
-                  <div className="flex items-center gap-3 my-2">
-                    <div className="h-10 w-10 rounded-xl bg-ink-800 border border-white/5 flex items-center justify-center">
-                      <Scissors size={18} className="text-gold-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-ink-100">{apt.service?.name}</p>
-                      <p className="text-xs text-ink-300">com {apt.barber?.name}</p>
-                    </div>
-                    <p className="font-display text-lg gold-text">R${apt.price}</p>
-                  </div>
-
-                  <div className="mt-3 pt-3 border-t border-white/5 flex justify-end">
-                    <button
-                      disabled={cancellingId === apt.id}
-                      onClick={() => handleCancel(apt.id)}
-                      className="text-xs font-semibold text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
-                    >
-                      {cancellingId === apt.id ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <XCircle size={14} />
-                      )}
-                      Cancelar Agendamento
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Histórico */}
-        {past.length > 0 && (
-          <section>
-            <h3 className="text-sm font-bold text-ink-100 mb-3">Histórico / Cancelados</h3>
-            <div className="space-y-2.5">
-              {past.map((apt) => (
-                <div key={apt.id} className="card p-3.5 flex items-center gap-3 opacity-60">
-                  <div className="h-9 w-9 rounded-xl bg-ink-850 flex items-center justify-center shrink-0">
-                    <Scissors size={16} className="text-ink-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-ink-200">{apt.service?.name}</p>
-                    <p className="text-xs text-ink-400">{apt.date} • {apt.time_slot}</p>
-                  </div>
-                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                    apt.status === 'cancelled' ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'
-                  }`}>
-                    {apt.status === 'cancelled' ? 'Cancelado' : 'Concluído'}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                      app.status === 'scheduled'
+                        ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                        : app.status === 'completed'
+                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    }`}
+                  >
+                    {app.status === 'scheduled' ? 'Agendado' : app.status === 'completed' ? 'Concluído' : 'Cancelado'}
                   </span>
                 </div>
-              ))}
-            </div>
-          </section>
+
+                <div className="grid grid-cols-2 gap-2 text-xs text-ink-300">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar size={13} className="text-ink-400" />
+                    <span>{app.date}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={13} className="text-ink-400" />
+                    <span>{app.time_slot}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 col-span-2">
+                    <User size={13} className="text-ink-400" />
+                    <span>Barbeiro: {app.barber?.name || 'Profissional'}</span>
+                  </div>
+                </div>
+
+                {app.status === 'scheduled' && (
+                  <div className="pt-2 border-t border-white/5 flex justify-end">
+                    <button
+                      disabled={cancellingId === app.id}
+                      onClick={() => handleCancelAppointment(app.id)}
+                      className="text-xs text-red-400 hover:text-red-300 font-semibold px-2 py-1 rounded transition-colors disabled:opacity-50"
+                    >
+                      {cancellingId === app.id ? 'Cancelando...' : 'Cancelar Agendamento'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </main>
     </div>
