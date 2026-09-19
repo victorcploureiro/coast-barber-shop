@@ -50,11 +50,14 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
   const [dbServices, setDbServices] = useState<Service[]>([]);
+  
+  // Estados de controle da interface
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
   const [userName, setUserName] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Anos de história
+  // Cálculo dos anos de história
   const currentYear = new Date().getFullYear();
   const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
 
@@ -63,11 +66,21 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [reviewCount, setReviewCount] = useState<number | null>(null);
   const [loadingRating, setLoadingRating] = useState<boolean>(true);
 
+  // Toggle do Accordion de Categorias
   const toggleCategory = (cat: string) => {
     setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
   };
 
-  // 1. Busca dados do Google Places
+  // Toggle do 'Ver mais' nas descrições de serviços
+  const toggleExpandService = (e: React.MouseEvent, serviceId: string) => {
+    e.stopPropagation();
+    setExpandedServices((prev) => ({
+      ...prev,
+      [serviceId]: !prev[serviceId],
+    }));
+  };
+
+  // 1. Busca dados do Google Places via Edge Function
   useEffect(() => {
     async function fetchRating() {
       try {
@@ -89,11 +102,11 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchRating();
   }, []);
 
-  // 2. Busca barbeiros, curtidas e serviços
+  // 2. Busca barbeiros, curtidas (barber_reviews) e serviços
   useEffect(() => {
     async function fetchHomeData() {
       try {
-        // Busca barbeiros
+        // Busca perfis de barbeiros
         const { data: barbersData, error: barbersError } = await supabase
           .from('profiles')
           .select('*')
@@ -102,7 +115,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
 
         if (barbersError) throw barbersError;
 
-        // Busca registros de curtidas (barber_reviews)
+        // Busca registros de curtidas
         const { data: reviewsData } = await supabase
           .from('barber_reviews')
           .select('barber_id, client_id, liked')
@@ -144,7 +157,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchHomeData();
   }, [user]);
 
-  // 3. Curtida Persistente (Upsert)
+  // 3. Função para curtir/descurtir barbeiro no Supabase (Upsert)
   const handleLikeBarber = async (e: React.MouseEvent, barberId: string) => {
     e.stopPropagation();
 
@@ -159,7 +172,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     const currentlyLiked = targetBarber.user_has_liked;
     const newLikedState = !currentlyLiked;
 
-    // Atualização otimista
+    // Atualização otimista imediata na UI
     setDbBarbers((prev) =>
       prev.map((b) => {
         if (b.id === barberId) {
@@ -188,7 +201,8 @@ export default function HomePage({ onNavigate }: HomePageProps) {
       if (error) throw error;
     } catch (err: any) {
       console.error('Erro ao salvar curtida no banco de dados:', err.message || err);
-      // Reverter em caso de falha
+      
+      // Reverter alteração otimista em caso de erro
       setDbBarbers((prev) =>
         prev.map((b) => {
           if (b.id === barberId) {
@@ -204,7 +218,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     }
   };
 
-  // 4. Busca Agendamento do Usuário
+  // 4. Busca nome do usuário e próximo agendamento
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -252,7 +266,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     fetchUserDataAndAppointment();
   }, [user]);
 
-  // Agrupamento dos serviços
+  // Agrupamento dos serviços por categoria
   const groupedServices = dbServices.reduce((acc, service) => {
     const cat = service.category?.toLowerCase() || 'outros';
     if (!acc[cat]) acc[cat] = [];
@@ -260,7 +274,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
     return acc;
   }, {} as Record<string, Service[]>);
 
-  // Ordenação de categorias
+  // Ordenação personalizada das categorias
   const sortedCategories = [
     ...categoryOrder.filter(cat => groupedServices[cat]),
     ...Object.keys(groupedServices).filter(cat => !categoryOrder.includes(cat))
@@ -275,7 +289,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         onActionClick={() => onNavigate('book')}
       />
 
-      {/* Agendamento / Banner Hero */}
+      {/* Hero Banner / Card de Agendamento */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
@@ -397,26 +411,62 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                   </button>
 
                   {isOpen && (
-                    <div className="p-2 space-y-2 border-t border-white/5">
+                    <div className="p-2 space-y-2.5 border-t border-white/5">
                       {categoryServices.map((service) => {
                         const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
+                        const isExpanded = !!expandedServices[service.id];
+
                         return (
                           <div 
                             key={service.id} 
-                            onClick={() => onNavigate('book', service.id)}
-                            className="p-3 rounded-xl bg-ink-900/60 hover:bg-ink-800/80 flex items-center gap-3.5 cursor-pointer transition-colors"
+                            className="p-3.5 rounded-xl bg-ink-900/60 border border-white/5 flex flex-col gap-3 transition-colors hover:border-gold-500/20"
                           >
-                            <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-                              <Icon size={18} className="text-gold-400" />
+                            {/* Topo do Card: Ícone, Nome, Duração e Preço */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0 mt-0.5">
+                                  <Icon size={18} className="text-gold-400" />
+                                </div>
+                                <div className="min-w-0">
+                                  <h4 className="text-sm font-semibold text-ink-100 leading-tight">{service.name}</h4>
+                                  <span className="text-[10px] text-ink-400 flex items-center gap-1 mt-1">
+                                    <Clock size={11} /> {service.duration} min
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Valor do Serviço */}
+                              <div className="text-right shrink-0">
+                                <span className="font-display text-lg gold-text tracking-wide">R${service.price}</span>
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-xs font-semibold text-ink-100">{service.name}</h4>
-                              <p className="text-[11px] text-ink-300 line-clamp-1">{service.description}</p>
-                              <span className="text-[10px] text-ink-400 flex items-center gap-1 mt-0.5">
-                                <Clock size={10} /> {service.duration} min
-                              </span>
+
+                            {/* Descrição com 'Ver mais' / 'Ver menos' */}
+                            {service.description && (
+                              <div className="text-xs text-ink-300 leading-relaxed pl-1">
+                                <p className={isExpanded ? '' : 'line-clamp-2'}>
+                                  {service.description}
+                                </p>
+                                {service.description.length > 60 && (
+                                  <button
+                                    onClick={(e) => toggleExpandService(e, service.id)}
+                                    className="text-[11px] text-gold-400 font-semibold mt-1 hover:underline focus:outline-none"
+                                  >
+                                    {isExpanded ? 'Ver menos' : 'Ver mais'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Botão de Agendar */}
+                            <div className="flex justify-end pt-1 border-t border-white/5">
+                              <button
+                                onClick={() => onNavigate('book', service.id)}
+                                className="px-4 py-1.5 rounded-lg gold-gradient text-ink-950 text-xs font-bold active:scale-95 transition-transform flex items-center gap-1 shadow-md"
+                              >
+                                Agendar <ChevronRight size={13} />
+                              </button>
                             </div>
-                            <span className="font-display text-base gold-text shrink-0">R${service.price}</span>
                           </div>
                         );
                       })}
@@ -429,7 +479,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         )}
       </section>
 
-      {/* Equipe com Likes Persistentes */}
+      {/* Nossa Equipe - Sem redirecionamento ao clicar no card/imagem */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
@@ -442,8 +492,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           {dbBarbers.map((barber) => (
             <div 
               key={barber.id} 
-              onClick={() => onNavigate('book')}
-              className="card card-hover shrink-0 w-36 overflow-hidden cursor-pointer flex flex-col justify-between"
+              className="card shrink-0 w-36 overflow-hidden flex flex-col justify-between"
             >
               <div>
                 <div className="h-36 overflow-hidden relative">
@@ -455,6 +504,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                 </div>
               </div>
 
+              {/* Botão exclusivo de Curtida */}
               <div className="px-2.5 pb-2.5">
                 <button
                   onClick={(e) => handleLikeBarber(e, barber.id)}
@@ -483,7 +533,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         <h3 className="text-lg font-bold text-ink-100 mb-3">Galeria</h3>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl overflow-hidden h-32">
-            <img src={shopInterior} alt="Interior da Coast Barber Shop" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+            <img src={shopInterior} alt="Interior da Barbearia" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
           </div>
           <div className="rounded-xl overflow-hidden h-32">
             <img src={beardGrooming} alt="Cuidados com a Barba" className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
