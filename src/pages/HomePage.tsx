@@ -1,14 +1,25 @@
 import { useState, useEffect } from 'react';
 import { 
-  Heart, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
-  Flame, Palette, Eye, Crown, Calendar, Star
+  Star, Clock, TrendingUp, ChevronRight, ChevronDown, Scissors, Sparkles, 
+  Flame, Palette, Eye, Crown, Calendar, Loader2, Bell, Heart
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { heroImage, shopInterior, beardGrooming } from '@/data';
 import { BRAND_CONFIG } from '@/config/brand';
-import type { TabKey, Barber } from '@/types';
+import type { TabKey, Service } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
+
+interface Barber {
+  id: string;
+  name: string;
+  role: string;
+  image: string;
+  likes_count: number;
+  user_has_liked?: boolean;
+  bio?: string;
+  specialties?: string[];
+}
 
 const iconMap: Record<string, typeof Scissors> = {
   scissors: Scissors,
@@ -19,27 +30,19 @@ const iconMap: Record<string, typeof Scissors> = {
   crown: Crown,
 };
 
-interface Service {
-  id: string;
-  name: string;
-  description?: string;
-  price: number;
-  duration?: number;
-  icon?: string;
-  category?: string;
-}
+// Ordem exata desejada das categorias
+const categoryOrder: string[] = ['cabelo', 'barba', 'combo', 'quimica', 'cuidados'];
+
+const categoryLabels: Record<string, string> = {
+  cabelo: 'Cabelo & Estilo',
+  barba: 'Barba & Ritual',
+  combo: 'Combos Exclusivos',
+  quimica: 'Tratamentos Químicos',
+  cuidados: 'Cuidados & Waxing',
+};
 
 interface HomePageProps {
   onNavigate: (tab: TabKey, serviceId?: string) => void;
-}
-
-function capitalizeCategory(category: string): string {
-  if (!category) return 'Outros Serviços';
-  return category
-    .toLowerCase()
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
 }
 
 export default function HomePage({ onNavigate }: HomePageProps) {
@@ -47,121 +50,161 @@ export default function HomePage({ onNavigate }: HomePageProps) {
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [dbBarbers, setDbBarbers] = useState<Barber[]>([]);
   const [dbServices, setDbServices] = useState<Service[]>([]);
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const [userName, setUserName] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // Cálculo dinâmico dos anos de história baseado no BRAND_CONFIG
+  // Anos de história
   const currentYear = new Date().getFullYear();
   const yearsOfHistory = Math.max(1, currentYear - BRAND_CONFIG.foundedYear);
 
-  // Estado para armazenar os dados vindos da Edge Function do Google Places
-  const [googleData, setGoogleData] = useState<{ rating: number; user_ratings_total: number; url?: string } | null>(null);
+  // Estados do Google Rating via API
+  const [googleRating, setGoogleRating] = useState<number | null>(null);
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
+  const [loadingRating, setLoadingRating] = useState<boolean>(true);
 
-  // Accordions iniciam fechados
-  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const toggleCategory = (cat: string) => {
+    setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+  };
 
-  // Curtidas persistidas via tabela barber_reviews
-  const [likes, setLikes] = useState<Record<string, { count: number; liked: boolean }>>({});
-
-  // 1. Chamar Edge Function do Supabase (Google Places)
+  // 1. Busca dados do Google Places
   useEffect(() => {
-    async function fetchGooglePlacesData() {
+    async function fetchRating() {
       try {
         const { data, error } = await supabase.functions.invoke('google-rating');
         if (!error && data) {
-          setGoogleData({
-            rating: data.rating || 4.9,
-            user_ratings_total: data.user_ratings_total || data.reviews_count || 0,
-            url: data.url || 'https://www.google.com/maps/place/Coast+Barber+Shop+%7C+Barbearia+em+SP/@-23.6332722,-46.6410901,17z/data=!3m2!4b1!5s0x94ce5afb08a7ead1:0x71d4a5bdc25112e2!4m6!3m5!1s0x94ce5b6dc91d67a5:0x65f01e136b070fc3!8m2!3d-23.6332771!4d-46.6385152!16s%2Fg%2F11fpbj0gn7?entry=ttu&g_ep=EgoyMDI2MDkxNi4wIKXMDSoASAFQAw%3D%3D'
-          });
+          const ratingVal = typeof data.rating === 'number' ? data.rating : Number(data.rating);
+          const countVal = data.userRatingCount ?? data.user_ratings_total ?? data.reviews_count;
+
+          if (!isNaN(ratingVal)) setGoogleRating(ratingVal);
+          if (countVal !== undefined && !isNaN(Number(countVal))) setReviewCount(Number(countVal));
         }
       } catch (err) {
-        console.error('Erro ao chamar Edge Function google-rating:', err);
+        console.error('Erro ao buscar avaliação do Google:', err);
+      } finally {
+        setLoadingRating(false);
       }
     }
 
-    fetchGooglePlacesData();
+    fetchRating();
   }, []);
 
-  // 2. Buscar Barbeiros e carregar contagem e status de curtidas da tabela `barber_reviews`
+  // 2. Busca barbeiros, curtidas e serviços
   useEffect(() => {
-    async function fetchBarbersAndLikes() {
+    async function fetchHomeData() {
       try {
+        // Busca barbeiros
         const { data: barbersData, error: barbersError } = await supabase
           .from('profiles')
           .select('*')
           .ilike('role', 'barbeiro')
           .order('name');
 
-        if (barbersError || !barbersData) return;
+        if (barbersError) throw barbersError;
 
-        const mapped: Barber[] = barbersData.map((b) => ({
-          id: b.id,
-          name: b.name || 'Barbeiro',
-          role: 'Barbeiro',
-          image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-          rating: b.rating || 5.0,
-          reviews: b.reviews || 0,
-          bio: '',
-          specialties: []
-        }));
-        setDbBarbers(mapped);
-
-        // Buscar todas as curtidas registradas na tabela `barber_reviews`
-        const { data: reviewsData, error: reviewsError } = await supabase
+        // Busca registros de curtidas (barber_reviews)
+        const { data: reviewsData } = await supabase
           .from('barber_reviews')
-          .select('barber_id, client_id, liked');
+          .select('barber_id, client_id, liked')
+          .eq('liked', true);
 
-        const likesState: Record<string, { count: number; liked: boolean }> = {};
+        if (barbersData && barbersData.length > 0) {
+          const mappedBarbers: Barber[] = barbersData.map((b) => {
+            const barberLikes = reviewsData?.filter((r) => r.barber_id === b.id) || [];
+            const userHasLiked = user ? barberLikes.some((r) => r.client_id === user.id) : false;
 
-        mapped.forEach((barber) => {
-          // Filtrar todas as curtidas ativas para este barbeiro
-          const barberLikes = (reviewsData || []).filter(
-            (r) => r.barber_id === barber.id && r.liked === true
-          );
+            return {
+              id: b.id,
+              name: b.name || 'Barbeiro',
+              role: 'Barbeiro',
+              image: b.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+              likes_count: barberLikes.length,
+              user_has_liked: userHasLiked,
+              bio: '',
+              specialties: []
+            };
+          });
+          setDbBarbers(mappedBarbers);
+        }
 
-          // Verificar se o usuário logado atualmente já curtiu
-          const isUserLiked = user
-            ? (reviewsData || []).some(
-                (r) => r.barber_id === barber.id && r.client_id === user.id && r.liked === true
-              )
-            : false;
-
-          likesState[barber.id] = {
-            count: barberLikes.length,
-            liked: isUserLiked,
-          };
-        });
-
-        setLikes(likesState);
-      } catch (err) {
-        console.error('Erro ao buscar barbeiros e curtidas:', err);
-      }
-    }
-
-    fetchBarbersAndLikes();
-  }, [user]);
-
-  // 3. Buscar Serviços
-  useEffect(() => {
-    async function fetchServices() {
-      try {
-        const { data, error } = await supabase
+        // Busca lista de serviços
+        const { data: servicesData } = await supabase
           .from('services')
           .select('*')
-          .order('name');
+          .order('price', { ascending: true });
 
-        if (!error && data) {
-          setDbServices(data);
-        }
+        if (servicesData) setDbServices(servicesData);
       } catch (err) {
-        console.error('Erro ao buscar serviços:', err);
+        console.error('Erro ao buscar dados na Home:', err);
+      } finally {
+        setLoading(false);
       }
     }
 
-    fetchServices();
-  }, []);
+    fetchHomeData();
+  }, [user]);
 
-  // 4. Buscar Usuário e Agendamentos
+  // 3. Curtida Persistente (Upsert)
+  const handleLikeBarber = async (e: React.MouseEvent, barberId: string) => {
+    e.stopPropagation();
+
+    if (!user) {
+      alert('Você precisa estar logado para curtir um barbeiro!');
+      return;
+    }
+
+    const targetBarber = dbBarbers.find((b) => b.id === barberId);
+    if (!targetBarber) return;
+
+    const currentlyLiked = targetBarber.user_has_liked;
+    const newLikedState = !currentlyLiked;
+
+    // Atualização otimista
+    setDbBarbers((prev) =>
+      prev.map((b) => {
+        if (b.id === barberId) {
+          return {
+            ...b,
+            user_has_liked: newLikedState,
+            likes_count: newLikedState ? b.likes_count + 1 : Math.max(0, b.likes_count - 1),
+          };
+        }
+        return b;
+      })
+    );
+
+    try {
+      const { error } = await supabase
+        .from('barber_reviews')
+        .upsert(
+          {
+            client_id: user.id,
+            barber_id: barberId,
+            liked: newLikedState,
+          },
+          { onConflict: 'client_id,barber_id' }
+        );
+
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('Erro ao salvar curtida no banco de dados:', err.message || err);
+      // Reverter em caso de falha
+      setDbBarbers((prev) =>
+        prev.map((b) => {
+          if (b.id === barberId) {
+            return {
+              ...b,
+              user_has_liked: currentlyLiked,
+              likes_count: targetBarber.likes_count,
+            };
+          }
+          return b;
+        })
+      );
+    }
+  };
+
+  // 4. Busca Agendamento do Usuário
   useEffect(() => {
     if (!user) {
       setNextAppointment(null);
@@ -177,117 +220,68 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           .eq('id', user.id)
           .single();
 
-        if (profile?.name) {
-          setUserName(profile.name.split(' ')[0]);
-        } else {
-          setUserName(user.email?.split('@')[0] || '');
+        const rawName = profile?.name || user.user_metadata?.full_name || user.email?.split('@')[0] || '';
+        const firstName = rawName.trim().split(' ')[0];
+        if (firstName) {
+          setUserName(firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase());
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
-        const { data: apts, error } = await supabase
+        const now = new Date();
+        const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        const { data: apts } = await supabase
           .from('appointments')
-          .select('*, service:services(name), barber:profiles!appointments_barber_id_fkey(name)')
+          .select('*, service:services(name), barber:profiles(name)')
           .eq('client_id', user.id)
           .eq('status', 'scheduled')
-          .gte('date', todayStr)
+          .gte('date', localTodayStr)
           .order('date', { ascending: true })
           .order('time_slot', { ascending: true })
           .limit(1);
 
-        if (!error && apts && apts.length > 0) {
+        if (apts && apts.length > 0) {
           setNextAppointment(apts[0]);
         } else {
           setNextAppointment(null);
         }
       } catch (err) {
-        console.error('Erro ao buscar dados na Home:', err);
+        console.error('Erro ao buscar agendamento:', err);
       }
     }
 
     fetchUserDataAndAppointment();
   }, [user]);
 
-  const toggleCategory = (categoryName: string) => {
-    setOpenCategories((prev) => ({
-      ...prev,
-      [categoryName]: !prev[categoryName],
-    }));
-  };
-
-  // Alternar e Salvar no Supabase (Tabela barber_reviews)
-  const toggleLike = async (barberId: string) => {
-    if (!user) {
-      alert('Faça login para curtir um barbeiro!');
-      return;
-    }
-
-    const current = likes[barberId] || { count: 0, liked: false };
-    const newLikedState = !current.liked;
-    const newCount = newLikedState ? current.count + 1 : Math.max(0, current.count - 1);
-
-    // Atualização otimista do estado na UI
-    setLikes((prev) => ({
-      ...prev,
-      [barberId]: {
-        count: newCount,
-        liked: newLikedState,
-      },
-    }));
-
-    try {
-      // Verificar se o registro já existe para este cliente e barbeiro
-      const { data: existingReview } = await supabase
-        .from('barber_reviews')
-        .select('id')
-        .eq('client_id', user.id)
-        .eq('barber_id', barberId)
-        .maybeSingle();
-
-      if (existingReview) {
-        // Atualizar linha existente
-        await supabase
-          .from('barber_reviews')
-          .update({ liked: newLikedState })
-          .eq('id', existingReview.id);
-      } else {
-        // Inserir nova linha
-        await supabase
-          .from('barber_reviews')
-          .insert({
-            client_id: user.id,
-            barber_id: barberId,
-            liked: newLikedState,
-          });
-      }
-    } catch (err) {
-      console.error('Erro ao salvar curtida no Supabase:', err);
-      // Reverter alteração otimista se der erro no servidor
-      setLikes((prev) => ({
-        ...prev,
-        [barberId]: current,
-      }));
-    }
-  };
-
-  const groupedServices = dbServices.reduce<Record<string, Service[]>>((acc, service) => {
-    const rawCategory = service.category || 'outros serviços';
-    const category = capitalizeCategory(rawCategory);
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(service);
+  // Agrupamento dos serviços
+  const groupedServices = dbServices.reduce((acc, service) => {
+    const cat = service.category?.toLowerCase() || 'outros';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(service);
     return acc;
-  }, {});
+  }, {} as Record<string, Service[]>);
+
+  // Ordenação de categorias
+  const sortedCategories = [
+    ...categoryOrder.filter(cat => groupedServices[cat]),
+    ...Object.keys(groupedServices).filter(cat => !categoryOrder.includes(cat))
+  ];
 
   return (
     <div className="min-h-screen pb-24">
-      <Header title={userName ? `Olá, ${userName}` : ""} showLocation />
+      <Header 
+        title={userName ? `Olá, ${userName}` : "Bem-vindo"} 
+        showLocation 
+        actionIcon={Bell}
+        onActionClick={() => onNavigate('book')}
+      />
 
-      {/* Próximo agendamento ou Hero Banner */}
+      {/* Agendamento / Banner Hero */}
       {nextAppointment ? (
         <section className="mx-5 mt-2 animate-slide-up">
           <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/30 shadow-xl relative overflow-hidden">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-full gold-gradient text-ink-950">
-                Próximo Agendamento
+                Seu Agendamento
               </span>
               <span className="text-xs text-ink-300 flex items-center gap-1">
                 <Calendar size={13} className="text-gold-400" />
@@ -310,10 +304,10 @@ export default function HomePage({ onNavigate }: HomePageProps) {
             </div>
 
             <button
-              onClick={() => onNavigate('profile')}
+              onClick={() => onNavigate('book')}
               className="mt-3 w-full py-2.5 rounded-xl bg-ink-800/80 border border-white/10 text-xs font-semibold text-ink-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
             >
-              Ver detalhes no perfil <ChevronRight size={14} />
+              Ver meus agendamentos <ChevronRight size={14} />
             </button>
           </div>
         </section>
@@ -333,39 +327,44 @@ export default function HomePage({ onNavigate }: HomePageProps) {
               onClick={() => onNavigate('book')}
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl gold-gradient text-ink-950 text-sm font-semibold active:scale-95 transition-transform"
             >
-              Agendar agora
-              <ChevronRight size={16} />
+              Agendar agora <ChevronRight size={16} />
             </button>
           </div>
         </section>
       )}
 
-      {/* Cards de Métricas */}
+      {/* Métricas e Google Rating */}
       <section className="grid grid-cols-2 gap-3 px-5 mt-4">
-        <div className="card p-3 text-center flex flex-col justify-center items-center">
-          <p className="font-display text-2xl gold-text tracking-wide">{yearsOfHistory}+</p>
+        <div className="card p-3 text-center flex flex-col items-center justify-center">
+          <p className="font-display text-2xl gold-text tracking-wide">
+            {yearsOfHistory}+
+          </p>
           <p className="text-[10px] text-ink-300 mt-0.5">Anos de história</p>
         </div>
 
         <a 
-          href={googleData?.url || "https://www.google.com/maps/place/Coast+Barber+Shop+%7C+Barbearia+em+SP/@-23.6332722,-46.6410901,17z/data=!3m2!4b1!5s0x94ce5afb08a7ead1:0x71d4a5bdc25112e2!4m6!3m5!1s0x94ce5b6dc91d67a5:0x65f01e136b070fc3!8m2!3d-23.6332771!4d-46.6385152!16s%2Fg%2F11fpbj0gn7?entry=ttu&g_ep=EgoyMDI2MDkxNi4wIKXMDSoASAFQAw%3D%3D"} 
-          target="_blank" 
+          href="https://maps.google.com/?q=Coast+Barber+Shop+Vila+Guarani"
+          target="_blank"
           rel="noopener noreferrer"
-          className="card p-3 flex flex-col justify-center items-center text-center hover:border-gold-500/40 transition-colors cursor-pointer"
+          className="card p-3 text-center flex flex-col items-center justify-center hover:border-gold-500/40 transition-colors cursor-pointer"
         >
-          <div className="flex items-center gap-1">
-            <Star size={16} className="text-gold-400 fill-gold-400" />
-            <span className="font-display text-2xl gold-text tracking-wide">
-              {googleData ? googleData.rating : '4.9'}
-            </span>
-          </div>
+          <p className="font-display text-2xl gold-text tracking-wide flex items-center justify-center gap-1">
+            {loadingRating ? (
+              '...'
+            ) : googleRating !== null ? (
+              googleRating.toFixed(1)
+            ) : (
+              '5.0'
+            )}
+            <Star className="w-4 h-4 fill-amber-400 text-amber-400 inline-block align-middle" />
+          </p>
           <p className="text-[10px] text-ink-300 mt-0.5">
-            Google {googleData ? `(${googleData.user_ratings_total} avaliações)` : 'Avaliação'}
+            {reviewCount ? `${reviewCount} avaliações` : 'Google Rating'}
           </p>
         </a>
       </section>
 
-      {/* Accordion de Serviços */}
+      {/* Serviços Categorizados */}
       <section className="px-5 mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-ink-100">Serviços</h3>
@@ -374,101 +373,108 @@ export default function HomePage({ onNavigate }: HomePageProps) {
           </button>
         </div>
 
-        <div className="space-y-3">
-          {Object.entries(groupedServices).map(([category, items]) => {
-            const isOpen = !!openCategories[category];
-            return (
-              <div key={category} className="card overflow-hidden">
-                <button
-                  onClick={() => toggleCategory(category)}
-                  className="w-full p-4 flex items-center justify-between text-left hover:bg-ink-800/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-ink-100">{category}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-ink-800 text-gold-400 border border-gold-500/20 font-medium">
-                      {items.length} {items.length === 1 ? 'opção' : 'opções'}
-                    </span>
-                  </div>
-                  <ChevronDown
-                    size={18}
-                    className={`text-gold-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                  />
-                </button>
+        {loading ? (
+          <div className="py-8 flex items-center justify-center gap-2 text-ink-300">
+            <Loader2 size={18} className="animate-spin text-gold-400" />
+            <span className="text-xs">Carregando serviços...</span>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {sortedCategories.map((catKey) => {
+              const isOpen = !!openCategories[catKey];
+              const categoryServices = groupedServices[catKey];
 
-                {isOpen && (
-                  <div className="px-4 pb-4 space-y-2.5 border-t border-white/5 pt-3">
-                    {items.map((service) => {
-                      const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
-                      return (
-                        <div
-                          key={service.id}
-                          onClick={() => onNavigate('book', service.id)}
-                          className="p-3 rounded-xl bg-ink-800/40 border border-white/5 flex items-center gap-3 cursor-pointer hover:border-gold-500/30 transition-colors"
-                        >
-                          <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
-                            <Icon size={18} className="text-gold-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-xs font-semibold text-ink-100 truncate">{service.name}</h4>
-                            <p className="text-[11px] text-ink-300 mt-0.5 line-clamp-1">{service.description || ''}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] text-ink-300 flex items-center gap-1">
-                                <Clock size={10} /> {service.duration || 30} min
+              return (
+                <div key={catKey} className="card overflow-hidden">
+                  <button
+                    onClick={() => toggleCategory(catKey)}
+                    className="w-full p-3.5 flex items-center justify-between bg-ink-850 hover:bg-ink-800 transition-colors"
+                  >
+                    <span className="text-xs font-bold text-gold-400 uppercase tracking-wider">
+                      {categoryLabels[catKey] || catKey} ({categoryServices.length})
+                    </span>
+                    <ChevronDown size={16} className={`text-ink-300 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isOpen && (
+                    <div className="p-2 space-y-2 border-t border-white/5">
+                      {categoryServices.map((service) => {
+                        const Icon = iconMap[service.icon || 'scissors'] ?? Scissors;
+                        return (
+                          <div 
+                            key={service.id} 
+                            onClick={() => onNavigate('book', service.id)}
+                            className="p-3 rounded-xl bg-ink-900/60 hover:bg-ink-800/80 flex items-center gap-3.5 cursor-pointer transition-colors"
+                          >
+                            <div className="h-10 w-10 rounded-lg bg-ink-800 border border-white/5 flex items-center justify-center shrink-0">
+                              <Icon size={18} className="text-gold-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-xs font-semibold text-ink-100">{service.name}</h4>
+                              <p className="text-[11px] text-ink-300 line-clamp-1">{service.description}</p>
+                              <span className="text-[10px] text-ink-400 flex items-center gap-1 mt-0.5">
+                                <Clock size={10} /> {service.duration} min
                               </span>
                             </div>
+                            <span className="font-display text-base gold-text shrink-0">R${service.price}</span>
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-display text-base gold-text tracking-wide">R${service.price}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
-      {/* Nossa Equipe com curtidas conectadas ao Supabase */}
+      {/* Equipe com Likes Persistentes */}
       <section className="mt-6">
         <div className="flex items-center justify-between mb-3 px-5">
           <h3 className="text-lg font-bold text-ink-100">Nossa Equipe</h3>
+          <button onClick={() => onNavigate('book')} className="text-xs text-gold-400 font-medium flex items-center gap-1">
+            Escolher <ChevronRight size={14} />
+          </button>
         </div>
+
         <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-2">
-          {dbBarbers.map((barber) => {
-            const barberLike = likes[barber.id] || { count: 0, liked: false };
-            return (
-              <div 
-                key={barber.id} 
-                className="card shrink-0 w-40 overflow-hidden"
-              >
-                <div className="h-44 overflow-hidden relative">
+          {dbBarbers.map((barber) => (
+            <div 
+              key={barber.id} 
+              onClick={() => onNavigate('book')}
+              className="card card-hover shrink-0 w-36 overflow-hidden cursor-pointer flex flex-col justify-between"
+            >
+              <div>
+                <div className="h-36 overflow-hidden relative">
                   <img src={barber.image} alt={barber.name} className="w-full h-full object-cover" />
                 </div>
-                <div className="p-3">
-                  <h4 className="text-sm font-semibold text-ink-100 truncate">{barber.name}</h4>
-                  <p className="text-[11px] text-gold-400 mb-2">{barber.role}</p>
-
-                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                    <button
-                      onClick={() => toggleLike(barber.id)}
-                      className="flex items-center gap-1.5 text-xs text-ink-300 hover:text-gold-400 transition-colors"
-                    >
-                      <Heart
-                        size={15}
-                        className={barberLike.liked ? 'text-red-500 fill-red-500' : 'text-ink-400'}
-                      />
-                      <span className="text-[11px] font-medium text-ink-200">
-                        {barberLike.count}
-                      </span>
-                    </button>
-                  </div>
+                <div className="p-2.5">
+                  <h4 className="text-xs font-bold text-ink-100 truncate">{barber.name}</h4>
+                  <p className="text-[10px] text-gold-400 mb-2">{barber.role}</p>
                 </div>
               </div>
-            );
-          })}
+
+              <div className="px-2.5 pb-2.5">
+                <button
+                  onClick={(e) => handleLikeBarber(e, barber.id)}
+                  className={`w-full py-1.5 px-2 rounded-lg border flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-all active:scale-95 ${
+                    barber.user_has_liked
+                      ? 'bg-red-500/10 border-red-500/50 text-red-400'
+                      : 'bg-ink-800/80 border-white/10 text-ink-300 hover:border-red-500/30'
+                  }`}
+                >
+                  <Heart
+                    size={13}
+                    className={`transition-colors ${
+                      barber.user_has_liked ? 'fill-red-500 text-red-500' : 'text-ink-400'
+                    }`}
+                  />
+                  <span>{barber.likes_count}</span>
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -485,7 +491,7 @@ export default function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </section>
 
-      {/* Clube */}
+      {/* CTA Clube Coast */}
       <section className="px-5 mt-6">
         <div className="relative rounded-2xl overflow-hidden p-5 bg-gradient-to-br from-ink-800 to-ink-850 border border-gold-500/20">
           <div className="flex items-center gap-3 mb-2">
