@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Scissors, CheckCircle2, Loader2, AlertCircle, 
-  Trash2, PlusCircle, CalendarDays, Clock, History, 
-  ChevronDown, ChevronUp 
+  Trash2, CalendarDays, Clock, History, Check, UserCheck
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,19 +37,18 @@ const AVAILABLE_TIMES = [
 export default function BookPage({ preselectedServiceId }: BookPageProps) {
   const { user } = useAuth();
 
-  // Estados de dados
+  // Dados
   const [services, setServices] = useState<Service[]>([]);
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   
-  // Estados do formulário
-  const [isBookingOpen, setIsBookingOpen] = useState<boolean>(!!preselectedServiceId);
+  // Seleções do Agendamento
   const [selectedService, setSelectedService] = useState<string>(preselectedServiceId || '');
   const [selectedBarber, setSelectedBarber] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   
-  // Feedback e carregamento
+  // Estados de feedback
   const [loadingData, setLoadingData] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -90,15 +88,14 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     loadPageData();
   }, [user]);
 
-  // Sincroniza o serviço selecionado quando a prop 'preselectedServiceId' mudar
+  // Atualiza a seleção quando a prop mudar
   useEffect(() => {
     if (preselectedServiceId) {
       setSelectedService(preselectedServiceId);
-      setIsBookingOpen(true); // Abre o dropdown automaticamente
     }
   }, [preselectedServiceId]);
 
-  // Separação dos agendamentos
+  // Separação de agendamentos
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
@@ -106,9 +103,10 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     .filter((a) => a.status === 'scheduled' && a.date >= todayStr)
     .sort((a, b) => (a.date + a.time_slot).localeCompare(b.date + b.time_slot));
   
-  const pastAppointments = appointments.filter(
-    (a) => a.status !== 'scheduled' || a.date < todayStr
-  );
+  // Apenas os últimos 3 no histórico
+  const pastAppointments = appointments
+    .filter((a) => a.status !== 'scheduled' || a.date < todayStr)
+    .slice(0, 3);
 
   const nextAppointment = upcomingAppointments[0];
 
@@ -124,7 +122,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     }
 
     if (!selectedService || !selectedBarber || !selectedDate || !selectedTime) {
-      setErrorMessage('Por favor, preencha todos os campos do agendamento.');
+      setErrorMessage('Por favor, selecione o serviço, barbeiro, data e horário.');
       return;
     }
 
@@ -163,7 +161,6 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
       setSelectedBarber('');
       setSelectedDate('');
       setSelectedTime('');
-      setIsBookingOpen(false);
 
       await loadPageData();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -223,15 +220,15 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
         {loadingData ? (
           <div className="py-16 flex flex-col items-center justify-center gap-3 text-ink-300">
             <Loader2 size={28} className="animate-spin text-gold-400" />
-            <span className="text-xs font-medium">Carregando agendamentos...</span>
+            <span className="text-xs font-medium">Carregando informações...</span>
           </div>
         ) : (
           <>
-            {/* 1. TOPO DA TELA: PRÓXIMO AGENDAMENTO (Oculto se não houver agendamentos futuros) */}
+            {/* 1. AGENDAMENTO ATIVO (Só aparece se houver) */}
             {nextAppointment && (
               <section className="animate-slide-up space-y-3">
                 <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase flex items-center gap-1.5">
-                  <CalendarDays size={14} /> Próximo Agendamento
+                  <CalendarDays size={14} /> Agendamento Ativo
                 </h3>
                 <div className="rounded-2xl p-5 bg-gradient-to-br from-gold-500/15 via-ink-900 to-ink-950 border border-gold-500/40 shadow-xl relative overflow-hidden">
                   <div className="flex items-center justify-between mb-3">
@@ -276,162 +273,148 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                     </button>
                   </div>
                 </div>
-
-                {upcomingAppointments.length > 1 && (
-                  <div className="space-y-2 pt-1">
-                    <h4 className="text-[11px] font-bold text-ink-300 uppercase tracking-wider">
-                      Outros Serviços Agendados ({upcomingAppointments.length - 1})
-                    </h4>
-                    {upcomingAppointments.slice(1).map((apt) => (
-                      <div key={apt.id} className="card p-3.5 flex items-center justify-between border-white/5">
-                        <div className="flex items-center gap-3">
-                          <Scissors size={15} className="text-gold-400" />
-                          <div>
-                            <p className="text-xs font-semibold text-ink-100">{apt.service?.name}</p>
-                            <p className="text-[10px] text-ink-400">{apt.date} às {apt.time_slot} • {apt.barber?.name}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleCancelAppointment(apt.id)}
-                          className="text-red-400 p-1.5 hover:bg-red-500/10 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </section>
             )}
 
-            {/* 2. MEIO DA TELA: FORMULÁRIO DE NOVO AGENDAMENTO */}
-            <section className="pt-1">
-              <div className="card border-gold-500/30 overflow-hidden transition-all">
-                <button
-                  onClick={() => setIsBookingOpen(!isBookingOpen)}
-                  className="w-full p-4 flex items-center justify-between bg-gradient-to-r from-ink-900 to-ink-950 text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-lg gold-gradient flex items-center justify-center text-ink-950 shrink-0">
-                      <PlusCircle size={20} />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-ink-100">Novo Agendamento</h3>
-                      <p className="text-[11px] text-ink-400">Escolha o serviço, barbeiro, data e horário</p>
+            {/* 2. LISTA DE SERVIÇOS E FORMULÁRIO DIRETO */}
+            <section className="space-y-4">
+              <h3 className="text-xs font-bold text-ink-300 tracking-wider uppercase">
+                Novo Agendamento
+              </h3>
+
+              <form onSubmit={handleCreateAppointment} className="space-y-5">
+                {/* Passo 1: Lista Visual de Serviços */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-gold-400">
+                    1. Selecione o Serviço
+                  </label>
+                  <div className="space-y-2">
+                    {services.map((service) => {
+                      const isSelected = selectedService === service.id;
+                      return (
+                        <div
+                          key={service.id}
+                          onClick={() => setSelectedService(service.id)}
+                          className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-gold-500/10 border-gold-500 text-ink-100 shadow-md'
+                              : 'bg-ink-900/60 border-white/5 hover:border-white/20 text-ink-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              isSelected ? 'gold-gradient text-ink-950' : 'bg-white/5 text-ink-400'
+                            }`}>
+                              <Scissors size={16} />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-ink-100">{service.name}</p>
+                              <p className="text-[10px] text-ink-400">{service.duration} min</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold gold-text">R${service.price}</span>
+                            <div className={`h-5 w-5 rounded-full border flex items-center justify-center ${
+                              isSelected ? 'border-gold-400 bg-gold-400 text-ink-950' : 'border-white/20'
+                            }`}>
+                              {isSelected && <Check size={12} strokeWidth={3} />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Passo 2: Seleção de Barbeiro */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-gold-400">
+                    2. Escolha o Profissional
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {barbers.map((barber) => {
+                      const isSelected = selectedBarber === barber.id;
+                      return (
+                        <button
+                          type="button"
+                          key={barber.id}
+                          onClick={() => setSelectedBarber(barber.id)}
+                          className={`p-3 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
+                            isSelected
+                              ? 'bg-gold-500/10 border-gold-500 text-ink-100'
+                              : 'bg-ink-900/60 border-white/5 text-ink-300 hover:border-white/20'
+                          }`}
+                        >
+                          <UserCheck size={16} className={isSelected ? 'text-gold-400' : 'text-ink-400'} />
+                          <span className="text-xs font-semibold truncate">{barber.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Passo 3: Data e Horário */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-gold-400">
+                      3. Data
+                    </label>
+                    <input
+                      type="date"
+                      min={todayStr}
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      required
+                      className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-gold-400">
+                      4. Horário
+                    </label>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {AVAILABLE_TIMES.map((time) => (
+                        <button
+                          type="button"
+                          key={time}
+                          onClick={() => setSelectedTime(time)}
+                          className={`py-2 rounded-lg text-[11px] font-semibold border transition-all ${
+                            selectedTime === time
+                              ? 'gold-gradient text-ink-950 border-gold-500'
+                              : 'bg-ink-900 border-white/5 text-ink-300 hover:border-gold-500/30'
+                          }`}
+                        >
+                          {time}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  {isBookingOpen ? (
-                    <ChevronUp size={18} className="text-gold-400" />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform"
+                >
+                  {submitting ? (
+                    <Loader2 size={16} className="animate-spin" />
                   ) : (
-                    <ChevronDown size={18} className="text-ink-400" />
+                    'Confirmar Agendamento'
                   )}
                 </button>
-
-                {isBookingOpen && (
-                  <div className="p-5 border-t border-white/5 animate-fade-in">
-                    <form onSubmit={handleCreateAppointment} className="space-y-4">
-                      {/* 1. Serviço */}
-                      <div>
-                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
-                          1. Escolha o Serviço
-                        </label>
-                        <select
-                          value={selectedService}
-                          onChange={(e) => setSelectedService(e.target.value)}
-                          required
-                          className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
-                        >
-                          <option value="">Selecione um serviço...</option>
-                          {services.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} - R${s.price} ({s.duration} min)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* 2. Barbeiro */}
-                      <div>
-                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
-                          2. Escolha o Barbeiro
-                        </label>
-                        <select
-                          value={selectedBarber}
-                          onChange={(e) => setSelectedBarber(e.target.value)}
-                          required
-                          className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
-                        >
-                          <option value="">Selecione o profissional...</option>
-                          {barbers.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* 3. Data */}
-                      <div>
-                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
-                          3. Selecione a Data
-                        </label>
-                        <input
-                          type="date"
-                          min={todayStr}
-                          value={selectedDate}
-                          onChange={(e) => setSelectedDate(e.target.value)}
-                          required
-                          className="w-full bg-ink-900 border border-white/10 rounded-xl p-3 text-xs text-ink-100 focus:border-gold-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* 4. Horário */}
-                      <div>
-                        <label className="block text-xs font-semibold text-ink-300 mb-1.5">
-                          4. Escolha o Horário
-                        </label>
-                        <div className="grid grid-cols-5 gap-2">
-                          {AVAILABLE_TIMES.map((time) => (
-                            <button
-                              type="button"
-                              key={time}
-                              onClick={() => setSelectedTime(time)}
-                              className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
-                                selectedTime === time
-                                  ? 'gold-gradient text-ink-950 border-gold-500 shadow-sm'
-                                  : 'bg-ink-900 border-white/5 text-ink-300 hover:border-gold-500/30'
-                              }`}
-                            >
-                              {time}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={submitting}
-                        className="w-full py-3.5 rounded-xl gold-gradient text-ink-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform mt-3"
-                      >
-                        {submitting ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          'Finalizar e Agendar Serviço'
-                        )}
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </div>
+              </form>
             </section>
 
-            {/* 3. PARTE INFERIOR: HISTÓRICO DE AGENDAMENTOS */}
-            {pastAppointments.length > 0 && (
-              <section className="pt-2">
-                <div className="card p-5 border-white/5 bg-ink-900/40 space-y-3">
-                  <h4 className="text-xs font-bold text-ink-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <History size={14} className="text-gold-400" /> Histórico de Serviços
-                  </h4>
+            {/* 3. CARD FIXO DE HISTÓRICO (ÚLTIMOS 3 SERVIÇOS) */}
+            <section className="pt-2">
+              <div className="card p-5 border-white/5 bg-ink-900/40 space-y-3">
+                <h4 className="text-xs font-bold text-ink-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <History size={14} className="text-gold-400" /> Histórico Recente (Últimos 3)
+                </h4>
+
+                {pastAppointments.length > 0 ? (
                   <div className="space-y-2">
                     {pastAppointments.map((apt) => (
                       <div 
@@ -459,9 +442,13 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                       </div>
                     ))}
                   </div>
-                </div>
-              </section>
-            )}
+                ) : (
+                  <p className="text-xs text-ink-400 text-center py-2">
+                    Nenhum serviço anterior encontrado.
+                  </p>
+                )}
+              </div>
+            </section>
           </>
         )}
       </main>
