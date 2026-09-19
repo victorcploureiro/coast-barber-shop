@@ -447,14 +447,6 @@ export default function HomePage({ onNavigate }: HomePageProps) {
                                 <p className={isExpanded ? '' : 'line-clamp-2'}>
                                   {service.description}
                                 </p>
-                                {service.description.length > 30 && (
-                                  <button
-                                    onClick={(e) => toggleExpandService(e, service.id)}
-                                    className="text-[11px] text-gold-400 font-semibold mt-1 hover:underline focus:outline-none"
-                                  >
-                                    {isExpanded ? 'Ver menos' : 'Ver mais'}
-                                  </button>
-                                )}
                               </div>
                             )}
 
