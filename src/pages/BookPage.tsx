@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   Scissors, CheckCircle2, Loader2, AlertCircle, 
   Trash2, PlusCircle, CalendarDays, Clock, History, 
-  ChevronDown, ChevronUp, ChevronRight 
+  ChevronDown, ChevronUp 
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,7 +43,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   
-  // Estados do formulário expansível
+  // Estados do formulário
   const [isBookingOpen, setIsBookingOpen] = useState<boolean>(!!preselectedServiceId);
   const [selectedService, setSelectedService] = useState<string>(preselectedServiceId || '');
   const [selectedBarber, setSelectedBarber] = useState<string>('');
@@ -90,11 +90,11 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
     loadPageData();
   }, [user]);
 
-  // Atualiza a seleção e abre o form caso venha pré-selecionado da Home
+  // Sincroniza o serviço selecionado quando a prop 'preselectedServiceId' mudar
   useEffect(() => {
     if (preselectedServiceId) {
       setSelectedService(preselectedServiceId);
-      setIsBookingOpen(true);
+      setIsBookingOpen(true); // Abre o dropdown automaticamente
     }
   }, [preselectedServiceId]);
 
@@ -142,7 +142,6 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
 
       if (error) throw error;
 
-      // Sincronização preparada com Google Agenda
       if (data) {
         const serviceObj = services.find(s => s.id === selectedService);
         const barberObj = barbers.find(b => b.id === selectedBarber);
@@ -202,7 +201,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
       <Header title="Agendamento" />
 
       <main className="px-5 mt-3 space-y-6">
-        {/* Banner de Feedback - Sucesso */}
+        {/* Banner Feedback Sucesso */}
         {successMessage && (
           <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between animate-fade-in shadow-lg">
             <div className="flex items-center gap-2.5">
@@ -213,7 +212,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
           </div>
         )}
 
-        {/* Banner de Feedback - Erro */}
+        {/* Banner Feedback Erro */}
         {errorMessage && (
           <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2.5 animate-fade-in">
             <AlertCircle size={18} className="shrink-0" />
@@ -228,7 +227,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
           </div>
         ) : (
           <>
-            {/* 1. TOPO DA TELA: PRÓXIMO AGENDAMENTO (Oculta completamente se não houver agendamentos futuros) */}
+            {/* 1. TOPO DA TELA: PRÓXIMO AGENDAMENTO (Oculto se não houver agendamentos futuros) */}
             {nextAppointment && (
               <section className="animate-slide-up space-y-3">
                 <h3 className="text-xs font-bold text-gold-400 tracking-wider uppercase flex items-center gap-1.5">
@@ -278,7 +277,6 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                   </div>
                 </div>
 
-                {/* Outros agendamentos futuros, se houver mais de 1 */}
                 {upcomingAppointments.length > 1 && (
                   <div className="space-y-2 pt-1">
                     <h4 className="text-[11px] font-bold text-ink-300 uppercase tracking-wider">
@@ -318,7 +316,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
                       <PlusCircle size={20} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-ink-100">Agendar Serviço</h3>
+                      <h3 className="text-sm font-bold text-ink-100">Novo Agendamento</h3>
                       <p className="text-[11px] text-ink-400">Escolha o serviço, barbeiro, data e horário</p>
                     </div>
                   </div>
@@ -427,7 +425,7 @@ export default function BookPage({ preselectedServiceId }: BookPageProps) {
               </div>
             </section>
 
-            {/* 3. PARTE INFERIOR: CARD DE HISTÓRICO DE AGENDAMENTOS */}
+            {/* 3. PARTE INFERIOR: HISTÓRICO DE AGENDAMENTOS */}
             {pastAppointments.length > 0 && (
               <section className="pt-2">
                 <div className="card p-5 border-white/5 bg-ink-900/40 space-y-3">
